@@ -60,25 +60,28 @@ pub(crate) fn grass_culling(
     camera_query: Query<&GlobalTransform, With<Camera3d>>,
     mut grass_asset: ResMut<Assets<GrassChunkData>>,
     grass_config: Res<GrassConfig>,
+    mut chunk_coords_cache: Local<Vec<(i32, i32, i32)>>,
 ) {
     let camera_position = camera_query.iter().next().map(GlobalTransform::translation);
 
     for mut chunks in query.iter_mut() {
         chunks.render.clear();
 
-        let chunk_coords: Vec<(i32, i32, i32)> = chunks.chunks.keys().copied().collect();
-        if chunk_coords.is_empty() {
+        chunk_coords_cache.clear();
+        chunk_coords_cache.extend(chunks.chunks.keys().copied());
+        if chunk_coords_cache.is_empty() {
             continue;
         }
 
         let chunk_size = chunks.chunk_size;
         let chunk_center_offset = Vec3::splat(chunk_size * 0.5);
+        let chunk_count = chunk_coords_cache.len();
 
         let Some(cam_pos) = camera_position else {
-            chunks.render.reserve(chunk_coords.len());
-            for chunk_coord in chunk_coords {
-                let handle = if let Some(handle) = chunks.loaded.get(&chunk_coord).cloned() {
-                    handle
+            chunks.render.reserve(chunk_count);
+            for chunk_coord in chunk_coords_cache.iter().copied() {
+                let handle = if let Some(handle) = chunks.loaded.get(&chunk_coord) {
+                    handle.clone()
                 } else {
                     let instance = &chunks.chunks.get(&chunk_coord).unwrap().0;
                     let handle = grass_asset.add(GrassChunkData(instance.clone()));
@@ -94,8 +97,8 @@ pub(crate) fn grass_culling(
         let cull_distance_sq = grass_config.cull_distance * grass_config.cull_distance;
         let cull_dimension = chunks.cull_dimension;
 
-        chunks.render.reserve(chunk_coords.len());
-        for chunk_coord in &chunk_coords {
+        chunks.render.reserve(chunk_count);
+        for chunk_coord in chunk_coords_cache.iter().copied() {
             let world_pos = Vec3::new(
                 chunk_coord.0 as f32,
                 chunk_coord.1 as f32,
@@ -110,7 +113,7 @@ pub(crate) fn grass_culling(
                 CullDimension::D3 => d3_distance_sq,
             };
             if cull_distance_current_sq > cull_distance_sq {
-                chunks.loaded.remove(chunk_coord);
+                chunks.loaded.remove(&chunk_coord);
                 continue;
             }
 
@@ -120,21 +123,21 @@ pub(crate) fn grass_culling(
                 GrassLOD::Low
             };
 
-            let handle = if let Some(handle) = chunks.loaded.get(chunk_coord).cloned() {
-                handle
+            let handle = if let Some(handle) = chunks.loaded.get(&chunk_coord) {
+                handle.clone()
             } else {
-                let instance = &chunks.chunks.get(chunk_coord).unwrap().0;
+                let instance = &chunks.chunks.get(&chunk_coord).unwrap().0;
                 let handle = grass_asset.add(GrassChunkData(instance.clone()));
-                chunks.loaded.insert(*chunk_coord, handle.clone());
+                chunks.loaded.insert(chunk_coord, handle.clone());
                 handle
             };
             chunks.render.push((lod_type, handle));
         }
 
         if chunks.render.is_empty() && !chunks.chunks.is_empty() {
-            for chunk_coord in chunk_coords {
-                let handle = if let Some(handle) = chunks.loaded.get(&chunk_coord).cloned() {
-                    handle
+            for chunk_coord in chunk_coords_cache.iter().copied() {
+                let handle = if let Some(handle) = chunks.loaded.get(&chunk_coord) {
+                    handle.clone()
                 } else {
                     let instance = &chunks.chunks.get(&chunk_coord).unwrap().0;
                     let handle = grass_asset.add(GrassChunkData(instance.clone()));

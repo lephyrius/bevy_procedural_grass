@@ -12,7 +12,7 @@ use bevy::{
 use bevy_inspector_egui::{InspectorOptions, prelude::ReflectInspectorOptions};
 use bytemuck::{Pod, Zeroable};
 
-#[derive(Clone, Copy, Pod, Zeroable, ShaderType)]
+#[derive(Clone, Copy, PartialEq, Pod, Zeroable, ShaderType)]
 #[cfg_attr(feature = "bevy-inspector-egui", derive(Reflect, InspectorOptions))]
 #[cfg_attr(feature = "bevy-inspector-egui", reflect(InspectorOptions))]
 #[repr(C)]

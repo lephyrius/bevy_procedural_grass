@@ -14,8 +14,8 @@ use bevy::{
 };
 
 use crate::grass::{
-    grass::{Grass, GrassColor},
-    wind::GrassWind,
+    grass::{Blade, Grass, GrassColor},
+    wind::{GrassWind, Wind},
 };
 
 use super::pipeline::GrassPipeline;
@@ -41,35 +41,53 @@ pub struct GrassBuffer {
     pub blade_buffer: Buffer,
 }
 
+#[derive(Component, Clone)]
+pub struct PreparedGrassUniforms {
+    pub color: [[f32; 4]; 3],
+    pub blade: Blade,
+}
+
 pub(crate) fn prepare_grass_buffers(
     mut commands: Commands,
     query: Query<(
         Entity,
         &GrassColor,
-        &crate::grass::grass::Blade,
+        &Blade,
         Option<&GrassBuffer>,
+        Option<&PreparedGrassUniforms>,
     )>,
     render_device: Res<RenderDevice>,
     render_queue: Res<RenderQueue>,
 ) {
-    for (entity, color, blade, grass_buffer) in &query {
+    for (entity, color, blade, grass_buffer, prepared_uniforms) in &query {
+        let color_array = color.to_array();
+        if prepared_uniforms
+            .is_some_and(|prepared| prepared.color == color_array && prepared.blade == *blade)
+        {
+            continue;
+        }
+
         if let Some(grass_buffer) = grass_buffer {
             render_queue.write_buffer(
                 &grass_buffer.color_buffer,
                 0,
-                bytemuck::cast_slice(&color.to_array()),
+                bytemuck::cast_slice(&color_array),
             );
             render_queue.write_buffer(
                 &grass_buffer.blade_buffer,
                 0,
                 bytemuck::cast_slice(&[*blade]),
             );
+            commands.entity(entity).insert(PreparedGrassUniforms {
+                color: color_array,
+                blade: *blade,
+            });
             continue;
         }
 
         let color_buffer = render_device.create_buffer_with_data(&BufferInitDescriptor {
             label: Some("grass color buffer"),
-            contents: bytemuck::cast_slice(&color.to_array()),
+            contents: bytemuck::cast_slice(&color_array),
             usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
         });
         let blade_buffer = render_device.create_buffer_with_data(&BufferInitDescriptor {
@@ -78,10 +96,16 @@ pub(crate) fn prepare_grass_buffers(
             usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
         });
 
-        commands.entity(entity).insert(GrassBuffer {
-            color_buffer,
-            blade_buffer,
-        });
+        commands
+            .entity(entity)
+            .insert(GrassBuffer {
+                color_buffer,
+                blade_buffer,
+            })
+            .insert(PreparedGrassUniforms {
+                color: color_array,
+                blade: *blade,
+            });
     }
 }
 
@@ -132,6 +156,9 @@ pub struct LocalWindBindGroupState {
     pub wind_map: Handle<Image>,
     pub using_fallback: bool,
 }
+
+#[derive(Component, Clone, Copy)]
+pub struct PreparedLocalWindData(pub Wind);
 
 pub(crate) fn prepare_global_wind_buffers(
     mut commands: Commands,
@@ -210,17 +237,29 @@ pub(crate) fn prepare_global_wind_bind_group(
 
 pub(crate) fn prepare_local_wind_buffers(
     mut commands: Commands,
-    query: Query<(Entity, &GrassWind, Option<&WindBuffer>)>,
+    query: Query<(
+        Entity,
+        &GrassWind,
+        Option<&WindBuffer>,
+        Option<&PreparedLocalWindData>,
+    )>,
     render_device: Res<RenderDevice>,
     render_queue: Res<RenderQueue>,
 ) {
-    for (entity, grass_wind, wind_buffer) in &query {
+    for (entity, grass_wind, wind_buffer, prepared_wind) in &query {
+        if prepared_wind.is_some_and(|prepared_wind| prepared_wind.0 == grass_wind.wind_data) {
+            continue;
+        }
+
         if let Some(wind_buffer) = wind_buffer {
             render_queue.write_buffer(
                 &wind_buffer.buffer,
                 0,
                 bytemuck::cast_slice(&[grass_wind.wind_data]),
             );
+            commands
+                .entity(entity)
+                .insert(PreparedLocalWindData(grass_wind.wind_data));
             continue;
         }
 
@@ -230,7 +269,10 @@ pub(crate) fn prepare_local_wind_buffers(
             usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
         });
 
-        commands.entity(entity).insert(WindBuffer { buffer });
+        commands
+            .entity(entity)
+            .insert(WindBuffer { buffer })
+            .insert(PreparedLocalWindData(grass_wind.wind_data));
     }
 }
 
