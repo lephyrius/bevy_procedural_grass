@@ -13,6 +13,7 @@ use bevy::{
     },
 };
 
+use crate::debug;
 use crate::grass::{
     chunk::{GrassLOD, RenderGrassChunks},
     grass::{Grass, GrassLODMesh},
@@ -45,8 +46,10 @@ impl<P: PhaseItem, const I: usize> RenderCommand<P> for SetGrassBindGroup<I> {
         pass: &mut TrackedRenderPass<'w>,
     ) -> RenderCommandResult {
         let Some(bind_group) = bind_group else {
+            debug::add_set_grass_call(true);
             return RenderCommandResult::Skip;
         };
+        debug::add_set_grass_call(false);
         pass.set_bind_group(I, &bind_group.bind_group, &[]);
         RenderCommandResult::Success
     }
@@ -65,6 +68,7 @@ impl<P: PhaseItem, const I: usize> RenderCommand<P> for SetWindBindGroup<I> {
         global_wind: SystemParamItem<'w, '_, Self::Param>,
         pass: &mut TrackedRenderPass<'w>,
     ) -> RenderCommandResult {
+        debug::add_set_wind_call();
         let bind_group = if let Some(local_wind) = local_wind.flatten() {
             local_wind
         } else {
@@ -84,13 +88,13 @@ impl<P: PhaseItem> RenderCommand<P> for DrawGrassInstanced {
         SRes<RenderAssets<GrassChunkBuffer>>,
     );
     type ViewQuery = ();
-    type ItemQuery = (Read<GrassLODMesh>, Read<RenderGrassChunks>);
+    type ItemQuery = (Option<Read<GrassLODMesh>>, Read<RenderGrassChunks>);
 
     #[inline]
     fn render<'w>(
         item: &P,
         _view: (),
-        item_data: Option<(&'w GrassLODMesh, &'w RenderGrassChunks)>,
+        item_data: Option<(Option<&'w GrassLODMesh>, &'w RenderGrassChunks)>,
         (meshes, render_mesh_instances, mesh_allocator, grass_data): SystemParamItem<
             'w,
             '_,
@@ -98,6 +102,7 @@ impl<P: PhaseItem> RenderCommand<P> for DrawGrassInstanced {
         >,
         pass: &mut TrackedRenderPass<'w>,
     ) -> RenderCommandResult {
+        debug::add_draw_call();
         let Some((lod, chunks)) = item_data else {
             return RenderCommandResult::Skip;
         };
@@ -120,14 +125,15 @@ impl<P: PhaseItem> RenderCommand<P> for DrawGrassInstanced {
         };
         let high_index_slice = mesh_allocator.mesh_index_slice(&high_mesh_id);
 
-        let low_mesh_id = lod.mesh_handle.as_ref().map(|handle| handle.id());
+        let low_mesh_id = lod.and_then(|lod| lod.mesh_handle.as_ref().map(|handle| handle.id()));
         let gpu_mesh_low = low_mesh_id.and_then(|id| meshes.get(id));
         let low_vertex_slice = low_mesh_id.and_then(|id| mesh_allocator.mesh_vertex_slice(&id));
         let low_index_slice = low_mesh_id.and_then(|id| mesh_allocator.mesh_index_slice(&id));
 
         for chunk in &chunks.0 {
             let Some(gpu_grass) = grass_data.get(chunk.1.id()) else {
-                return RenderCommandResult::Skip;
+                debug::add_missing_chunk_buffers(1);
+                continue;
             };
 
             let (gpu_mesh, vertex_slice, index_slice) = match chunk.0 {
@@ -152,7 +158,7 @@ impl<P: PhaseItem> RenderCommand<P> for DrawGrassInstanced {
                     count,
                 } => {
                     let Some(index_slice) = index_slice else {
-                        return RenderCommandResult::Skip;
+                        continue;
                     };
 
                     pass.set_index_buffer(index_slice.buffer.slice(..), *index_format);
@@ -161,9 +167,11 @@ impl<P: PhaseItem> RenderCommand<P> for DrawGrassInstanced {
                         vertex_slice.range.start as i32,
                         0..gpu_grass.length as u32,
                     );
+                    debug::add_drawn(1, gpu_grass.length as u64);
                 }
                 RenderMeshBufferInfo::NonIndexed => {
                     pass.draw(vertex_slice.range.clone(), 0..gpu_grass.length as u32);
+                    debug::add_drawn(1, gpu_grass.length as u64);
                 }
             }
         }

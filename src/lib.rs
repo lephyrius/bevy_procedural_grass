@@ -1,6 +1,6 @@
 use bevy::{
     asset::{load_internal_asset, uuid_handle},
-    core_pipeline::core_3d::Transparent3d,
+    core_pipeline::core_3d::Opaque3d,
     prelude::*,
     render::{
         extract_component::ExtractComponentPlugin, extract_resource::ExtractResourcePlugin,
@@ -23,6 +23,7 @@ use render::{
     pipeline::GrassPipeline,
 };
 
+pub mod debug;
 pub mod grass;
 mod render;
 mod util;
@@ -77,10 +78,12 @@ impl Plugin for ProceduralGrassPlugin {
             .add_systems(
                 Update,
                 (
+                    grass::grass::generate_grass,
                     grass::chunk::grass_culling,
                     grass::wind::update_wind_time,
                     ensure_no_indirect_drawing,
-                ),
+                )
+                    .chain(),
             )
             .init_asset::<GrassChunkData>()
             .add_plugins(RenderAssetPlugin::<GrassChunkBuffer>::default())
@@ -97,7 +100,7 @@ impl Plugin for ProceduralGrassPlugin {
         };
 
         render_app
-            .add_render_command::<Transparent3d, DrawGrass>()
+            .add_render_command::<Opaque3d, DrawGrass>()
             .init_resource::<SpecializedMeshPipelines<GrassPipeline>>()
             .add_systems(RenderStartup, render::compute::init_wind_compute_pipeline)
             .add_systems(

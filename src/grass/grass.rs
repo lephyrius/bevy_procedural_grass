@@ -34,6 +34,9 @@ pub fn generate_grass(
     meshes: Res<Assets<Mesh>>,
 ) {
     for (grass, mut chunks) in query.iter_mut() {
+        if !chunks.chunks.is_empty() {
+            continue;
+        }
         let Some(entity) = grass.entity else {
             continue;
         };
@@ -81,6 +84,72 @@ impl Grass {
         if let Some(VertexAttributeValues::Float32x3(positions)) =
             mesh.attribute(Mesh::ATTRIBUTE_POSITION)
         {
+            let normals = match mesh.attribute(Mesh::ATTRIBUTE_NORMAL) {
+                Some(VertexAttributeValues::Float32x3(normals)) => Some(normals),
+                _ => None,
+            };
+
+            let mut scatter_triangle = |i0: usize, i1: usize, i2: usize| {
+                let v0 = Vec3::from(positions[i0]) * transform.scale;
+                let v1 = Vec3::from(positions[i1]) * transform.scale;
+                let v2 = Vec3::from(positions[i2]) * transform.scale;
+
+                let face_normal = (v1 - v0).cross(v2 - v0);
+                let mut normal = face_normal.normalize_or_zero();
+                if let Some(normals) = normals {
+                    let reference_normal = (Vec3::from(normals[i0])
+                        + Vec3::from(normals[i1])
+                        + Vec3::from(normals[i2]))
+                    .normalize_or_zero();
+                    if reference_normal != Vec3::ZERO && normal.dot(reference_normal) < 0.0 {
+                        normal = -normal;
+                    }
+                }
+                let area = face_normal.length() * 0.5;
+                let scaled_density = (self.density as f32 * area).ceil() as u32;
+
+                for _ in 0..scaled_density {
+                    let mut rng = rand::thread_rng();
+
+                    let r1 = rng.gen::<f32>().sqrt();
+                    let r2 = rng.gen::<f32>();
+                    let barycentric = Vec3::new(1.0 - r1, r1 * (1.0 - r2), r1 * r2);
+
+                    let position = (v0 * barycentric.x + v1 * barycentric.y + v2 * barycentric.z)
+                        + transform.translation;
+
+                    let chunk_coords = (
+                        (position.x / chunk_size).floor() as i32,
+                        (position.y / chunk_size).floor() as i32,
+                        (position.z / chunk_size).floor() as i32,
+                    );
+
+                    let chunk_base = Vec3::new(
+                        chunk_coords.0 as f32,
+                        chunk_coords.1 as f32,
+                        chunk_coords.2 as f32,
+                    ) * chunk_size;
+                    let chunk_pos = position - chunk_base;
+                    let chunk_uvw = Vec3::new(
+                        chunk_pos.x / chunk_size,
+                        chunk_pos.y / chunk_size,
+                        chunk_pos.z / chunk_size,
+                    );
+
+                    let instance = GrassData {
+                        position,
+                        normal,
+                        chunk_uvw,
+                    };
+
+                    chunks
+                        .entry(chunk_coords)
+                        .or_insert_with(|| GrassChunkData(Vec::new()))
+                        .0
+                        .push(instance);
+                }
+            };
+
             if let Some(indices) = mesh.indices() {
                 let mut triangle = Vec::with_capacity(3);
                 for index in indices.iter() {
@@ -88,58 +157,18 @@ impl Grass {
                     if triangle.len() != 3 {
                         continue;
                     }
-
-                    let v0 = Vec3::from(positions[triangle[0] as usize]) * transform.scale;
-                    let v1 = Vec3::from(positions[triangle[1] as usize]) * transform.scale;
-                    let v2 = Vec3::from(positions[triangle[2] as usize]) * transform.scale;
-
-                    let normal = (v1 - v0).cross(v2 - v0).normalize_or_zero();
-                    let area = ((v1 - v0).cross(v2 - v0)).length() * 0.5;
-                    let scaled_density = (self.density as f32 * area).ceil() as u32;
-
-                    for _ in 0..scaled_density {
-                        let mut rng = rand::thread_rng();
-
-                        let r1 = rng.gen::<f32>().sqrt();
-                        let r2 = rng.gen::<f32>();
-                        let barycentric = Vec3::new(1.0 - r1, r1 * (1.0 - r2), r1 * r2);
-
-                        let position =
-                            (v0 * barycentric.x + v1 * barycentric.y + v2 * barycentric.z)
-                                + transform.translation;
-
-                        let chunk_coords = (
-                            (position.x / chunk_size).floor() as i32,
-                            (position.y / chunk_size).floor() as i32,
-                            (position.z / chunk_size).floor() as i32,
-                        );
-
-                        let chunk_base = Vec3::new(
-                            chunk_coords.0 as f32,
-                            chunk_coords.1 as f32,
-                            chunk_coords.2 as f32,
-                        ) * chunk_size;
-                        let chunk_pos = position - chunk_base;
-                        let chunk_uvw = Vec3::new(
-                            chunk_pos.x / chunk_size,
-                            chunk_pos.y / chunk_size,
-                            chunk_pos.z / chunk_size,
-                        );
-
-                        let instance = GrassData {
-                            position,
-                            normal,
-                            chunk_uvw,
-                        };
-
-                        chunks
-                            .entry(chunk_coords)
-                            .or_insert_with(|| GrassChunkData(Vec::new()))
-                            .0
-                            .push(instance);
-                    }
-
+                    scatter_triangle(triangle[0], triangle[1], triangle[2]);
                     triangle.clear();
+                }
+            } else {
+                for triangle in (0..positions.len()).step_by(3) {
+                    let i0 = triangle;
+                    let i1 = triangle + 1;
+                    let i2 = triangle + 2;
+                    if i2 >= positions.len() {
+                        break;
+                    }
+                    scatter_triangle(i0, i1, i2);
                 }
             }
         }
