@@ -18,14 +18,8 @@ pub struct GrassData {
     pub chunk_uvw: Vec3,
 }
 
-#[derive(Component, Deref, Clone, Asset, TypePath)]
+#[derive(Default, Component, Deref, Clone, Asset, TypePath)]
 pub struct GrassChunkData(pub Vec<GrassData>);
-
-impl Default for GrassChunkData {
-    fn default() -> Self {
-        Self(Vec::new())
-    }
-}
 
 pub struct GrassChunkBuffer {
     pub buffer: Buffer,

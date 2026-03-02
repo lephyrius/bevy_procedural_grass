@@ -123,7 +123,7 @@ impl Plugin for ProceduralGrassPlugin {
             );
 
         let mut render_graph = render_app.world_mut().resource_mut::<RenderGraph>();
-        render_graph.add_node(GrassWindComputeLabel, GrassWindComputeNode::default());
+        render_graph.add_node(GrassWindComputeLabel, GrassWindComputeNode);
         render_graph.add_node_edge(GrassWindComputeLabel, CameraDriverLabel);
     }
 

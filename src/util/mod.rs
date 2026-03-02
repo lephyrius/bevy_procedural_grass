@@ -17,7 +17,7 @@ pub(crate) fn draw_chunk(gizmos: &mut Gizmos, chunk_coord: &(i32, i32, i32), chu
             (chunk_coord.1 as f32 * chunk_size + chunk_size / 2.),
             (chunk_coord.2 as f32 * chunk_size + chunk_size / 2.),
         )),
-        half_extents: Vec3A::splat(chunk_size as f32 / 2.0),
+        half_extents: Vec3A::splat(chunk_size / 2.0),
     };
 
     gizmos.cube(
