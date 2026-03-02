@@ -6,7 +6,7 @@ use crate::render::instance::GrassChunkData;
 
 use super::config::GrassConfig;
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq, Eq)]
 pub enum GrassLOD {
     High,
     Low,

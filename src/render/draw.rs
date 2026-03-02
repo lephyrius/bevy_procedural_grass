@@ -112,50 +112,94 @@ impl<P: PhaseItem> RenderCommand<P> for DrawGrassInstanced {
         let mesh_allocator = mesh_allocator.into_inner();
 
         let high_mesh_id = mesh_instance.mesh_asset_id;
-        let Some(gpu_mesh_high) = meshes.get(high_mesh_id) else {
-            return RenderCommandResult::Skip;
+        let has_high = chunks
+            .0
+            .iter()
+            .any(|chunk| matches!(chunk.0, GrassLOD::High));
+        let has_low = chunks
+            .0
+            .iter()
+            .any(|chunk| matches!(chunk.0, GrassLOD::Low));
+
+        let high_resources = if has_high {
+            let Some(gpu_mesh_high) = meshes.get(high_mesh_id) else {
+                return RenderCommandResult::Skip;
+            };
+            let Some(high_vertex_slice) = mesh_allocator.mesh_vertex_slice(&high_mesh_id) else {
+                return RenderCommandResult::Skip;
+            };
+            let high_index_slice = mesh_allocator.mesh_index_slice(&high_mesh_id);
+            Some((gpu_mesh_high, high_vertex_slice, high_index_slice))
+        } else {
+            None
         };
-        let Some(high_vertex_slice) = mesh_allocator.mesh_vertex_slice(&high_mesh_id) else {
-            return RenderCommandResult::Skip;
-        };
-        let high_index_slice = mesh_allocator.mesh_index_slice(&high_mesh_id);
 
         let low_mesh_id = lod.and_then(|lod| lod.mesh_handle.as_ref().map(|handle| handle.id()));
-        let gpu_mesh_low = low_mesh_id.and_then(|id| meshes.get(id));
-        let low_vertex_slice = low_mesh_id.and_then(|id| mesh_allocator.mesh_vertex_slice(&id));
-        let low_index_slice = low_mesh_id.and_then(|id| mesh_allocator.mesh_index_slice(&id));
+        let low_resources = if has_low {
+            low_mesh_id.and_then(|id| {
+                let gpu_mesh_low = meshes.get(id)?;
+                let low_vertex_slice = mesh_allocator.mesh_vertex_slice(&id)?;
+                let low_index_slice = mesh_allocator.mesh_index_slice(&id);
+                Some((gpu_mesh_low, low_vertex_slice, low_index_slice))
+            })
+        } else {
+            None
+        };
+
+        let mut bound_lod: Option<GrassLOD> = None;
 
         for chunk in &chunks.0 {
             let Some(gpu_grass) = grass_data.get(chunk.1.id()) else {
                 continue;
             };
 
-            let (gpu_mesh, vertex_slice, index_slice) = match chunk.0 {
-                GrassLOD::High => (gpu_mesh_high, &high_vertex_slice, high_index_slice.as_ref()),
+            let (lod_kind, gpu_mesh, vertex_slice, index_slice) = match chunk.0 {
+                GrassLOD::High => {
+                    let Some((gpu_mesh_high, high_vertex_slice, high_index_slice)) =
+                        high_resources.as_ref()
+                    else {
+                        continue;
+                    };
+                    (
+                        GrassLOD::High,
+                        *gpu_mesh_high,
+                        high_vertex_slice,
+                        high_index_slice.as_ref(),
+                    )
+                }
                 GrassLOD::Low => {
-                    let Some(gpu_mesh_low) = gpu_mesh_low else {
+                    let Some((gpu_mesh_low, low_vertex_slice, low_index_slice)) =
+                        low_resources.as_ref()
+                    else {
                         continue;
                     };
-                    let Some(low_vertex_slice) = low_vertex_slice.as_ref() else {
-                        continue;
-                    };
-                    (gpu_mesh_low, low_vertex_slice, low_index_slice.as_ref())
+                    (
+                        GrassLOD::Low,
+                        *gpu_mesh_low,
+                        low_vertex_slice,
+                        low_index_slice.as_ref(),
+                    )
                 }
             };
 
-            pass.set_vertex_buffer(0, vertex_slice.buffer.slice(..));
-            pass.set_vertex_buffer(1, gpu_grass.buffer.slice(..));
-
-            match &gpu_mesh.buffer_info {
-                RenderMeshBufferInfo::Indexed {
-                    index_format,
-                    count,
-                } => {
+            if bound_lod != Some(lod_kind) {
+                pass.set_vertex_buffer(0, vertex_slice.buffer.slice(..));
+                if let RenderMeshBufferInfo::Indexed { index_format, .. } = &gpu_mesh.buffer_info {
                     let Some(index_slice) = index_slice else {
                         continue;
                     };
-
                     pass.set_index_buffer(index_slice.buffer.slice(..), *index_format);
+                }
+                bound_lod = Some(lod_kind);
+            }
+
+            pass.set_vertex_buffer(1, gpu_grass.buffer.slice(..));
+
+            match &gpu_mesh.buffer_info {
+                RenderMeshBufferInfo::Indexed { count, .. } => {
+                    let Some(index_slice) = index_slice else {
+                        continue;
+                    };
                     pass.draw_indexed(
                         index_slice.range.start..(index_slice.range.start + count),
                         vertex_slice.range.start as i32,
