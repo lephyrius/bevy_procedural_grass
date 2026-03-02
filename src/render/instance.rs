@@ -1,6 +1,6 @@
 use bevy::{
     asset::AssetId,
-    ecs::system::{lifetimeless::SRes, SystemParamItem},
+    ecs::system::{SystemParamItem, lifetimeless::SRes},
     prelude::*,
     render::{
         render_asset::{PrepareAssetError, RenderAsset},

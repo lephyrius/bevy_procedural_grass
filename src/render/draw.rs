@@ -1,11 +1,11 @@
 use bevy::{
-    ecs::system::{lifetimeless::*, SystemParamItem},
+    ecs::system::{SystemParamItem, lifetimeless::*},
     pbr::{
         RenderMeshInstances, SetMeshBindGroup, SetMeshViewBindGroup,
         SetMeshViewBindingArrayBindGroup,
     },
     render::{
-        mesh::{allocator::MeshAllocator, RenderMesh, RenderMeshBufferInfo},
+        mesh::{RenderMesh, RenderMeshBufferInfo, allocator::MeshAllocator},
         render_asset::RenderAssets,
         render_phase::{
             PhaseItem, RenderCommand, RenderCommandResult, SetItemPipeline, TrackedRenderPass,
@@ -13,7 +13,6 @@ use bevy::{
     },
 };
 
-use crate::debug;
 use crate::grass::{
     chunk::{GrassLOD, RenderGrassChunks},
     grass::{Grass, GrassLODMesh},
@@ -46,10 +45,8 @@ impl<P: PhaseItem, const I: usize> RenderCommand<P> for SetGrassBindGroup<I> {
         pass: &mut TrackedRenderPass<'w>,
     ) -> RenderCommandResult {
         let Some(bind_group) = bind_group else {
-            debug::add_set_grass_call(true);
             return RenderCommandResult::Skip;
         };
-        debug::add_set_grass_call(false);
         pass.set_bind_group(I, &bind_group.bind_group, &[]);
         RenderCommandResult::Success
     }
@@ -68,7 +65,6 @@ impl<P: PhaseItem, const I: usize> RenderCommand<P> for SetWindBindGroup<I> {
         global_wind: SystemParamItem<'w, '_, Self::Param>,
         pass: &mut TrackedRenderPass<'w>,
     ) -> RenderCommandResult {
-        debug::add_set_wind_call();
         let bind_group = if let Some(local_wind) = local_wind.flatten() {
             local_wind
         } else {
@@ -102,7 +98,6 @@ impl<P: PhaseItem> RenderCommand<P> for DrawGrassInstanced {
         >,
         pass: &mut TrackedRenderPass<'w>,
     ) -> RenderCommandResult {
-        debug::add_draw_call();
         let Some((lod, chunks)) = item_data else {
             return RenderCommandResult::Skip;
         };
@@ -132,7 +127,6 @@ impl<P: PhaseItem> RenderCommand<P> for DrawGrassInstanced {
 
         for chunk in &chunks.0 {
             let Some(gpu_grass) = grass_data.get(chunk.1.id()) else {
-                debug::add_missing_chunk_buffers(1);
                 continue;
             };
 
@@ -167,11 +161,9 @@ impl<P: PhaseItem> RenderCommand<P> for DrawGrassInstanced {
                         vertex_slice.range.start as i32,
                         0..gpu_grass.length as u32,
                     );
-                    debug::add_drawn(1, gpu_grass.length as u64);
                 }
                 RenderMeshBufferInfo::NonIndexed => {
                     pass.draw(vertex_slice.range.clone(), 0..gpu_grass.length as u32);
-                    debug::add_drawn(1, gpu_grass.length as u64);
                 }
             }
         }

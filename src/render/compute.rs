@@ -6,9 +6,9 @@ use bevy::{
         render_asset::RenderAssets,
         render_graph::{self, RenderLabel},
         render_resource::{
-            binding_types::{texture_storage_2d, uniform_buffer},
             BindGroup, BindGroupEntries, BufferBinding, ComputePassDescriptor,
             ComputePipelineDescriptor, PipelineCache, StorageTextureAccess, TextureFormat,
+            binding_types::{texture_storage_2d, uniform_buffer},
         },
         renderer::{RenderContext, RenderDevice},
         texture::GpuImage,
@@ -16,8 +16,8 @@ use bevy::{
 };
 
 use crate::{
-    grass::wind::{GrassWind, Wind},
     GRASS_WIND_COMPUTE_SHADER_HANDLE,
+    grass::wind::{GrassWind, Wind},
 };
 
 use super::prepare::WindBuffer;

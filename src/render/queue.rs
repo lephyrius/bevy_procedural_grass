@@ -4,16 +4,15 @@ use bevy::{
     pbr::{MeshPipelineKey, RenderMeshInstances},
     prelude::*,
     render::{
-        mesh::{allocator::MeshAllocator, RenderMesh},
+        mesh::{RenderMesh, allocator::MeshAllocator},
         render_asset::RenderAssets,
         render_phase::{BinnedRenderPhaseType, DrawFunctions, ViewBinnedRenderPhases},
-        render_resource::{CachedPipelineState, PipelineCache, SpecializedMeshPipelines},
+        render_resource::{PipelineCache, SpecializedMeshPipelines},
         sync_world::MainEntity,
         view::ExtractedView,
     },
 };
 
-use crate::debug;
 use crate::grass::chunk::RenderGrassChunks;
 
 use super::{draw::DrawGrass, pipeline::GrassPipeline};
@@ -30,10 +29,7 @@ pub(crate) fn grass_queue(
     views: Query<(&ExtractedView, &Msaa)>,
     mesh_allocator: Res<MeshAllocator>,
     mut change_tick: Local<Tick>,
-    mut logged_pipeline_error: Local<bool>,
 ) {
-    debug::begin_render_debug_frame();
-
     let draw_custom = opaque_3d_draw_functions.read().id::<DrawGrass>();
 
     for (view, msaa) in &views {
@@ -62,18 +58,6 @@ pub(crate) fn grass_queue(
             let pipeline = pipelines
                 .specialize(&pipeline_cache, &custom_pipeline, key, &mesh.layout)
                 .unwrap();
-            match pipeline_cache.get_render_pipeline_state(pipeline) {
-                CachedPipelineState::Queued => debug::add_pipeline_queued(),
-                CachedPipelineState::Creating(_) => debug::add_pipeline_creating(),
-                CachedPipelineState::Ok(_) => debug::add_pipeline_ready(),
-                CachedPipelineState::Err(err) => {
-                    debug::add_pipeline_error();
-                    if !*logged_pipeline_error {
-                        eprintln!("grass render pipeline error: {err}");
-                        *logged_pipeline_error = true;
-                    }
-                }
-            }
 
             let next_change_tick = change_tick.get() + 1;
             change_tick.set(next_change_tick);
@@ -95,8 +79,6 @@ pub(crate) fn grass_queue(
                 BinnedRenderPhaseType::UnbatchableMesh,
                 *change_tick,
             );
-
-            debug::add_queued(1, chunks.0.len() as u64);
         }
     }
 }

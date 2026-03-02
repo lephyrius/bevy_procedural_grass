@@ -1,6 +1,6 @@
 use bevy::{mesh::VertexAttributeValues, prelude::*, window::PrimaryWindow};
+use bevy_procedural_grass::grass::chunk::GrassChunks;
 use bevy_procedural_grass::prelude::*;
-use bevy_procedural_grass::{debug, grass::chunk::GrassChunks};
 use noise::NoiseFn;
 
 fn main() {
@@ -22,6 +22,43 @@ fn main() {
         .add_systems(Startup, setup)
         .add_systems(Update, update_debug_overlay)
         .run();
+}
+
+fn update_debug_overlay(
+    mut windows: Query<&mut Window, With<PrimaryWindow>>,
+    chunks_query: Query<&GrassChunks>,
+    time: Res<Time>,
+    mut tick_accum: Local<f32>,
+) {
+    if std::env::var_os("GRASS_DEBUG_OVERLAY").is_none() {
+        return;
+    }
+
+    *tick_accum += time.delta_secs();
+    if *tick_accum < 0.2 {
+        return;
+    }
+    *tick_accum = 0.0;
+
+    let mut grass_entities = 0usize;
+    let mut chunks_total = 0usize;
+    let mut chunks_loaded = 0usize;
+    let mut chunks_render = 0usize;
+
+    for chunks in &chunks_query {
+        grass_entities += 1;
+        chunks_total += chunks.chunks.len();
+        chunks_loaded += chunks.loaded.len();
+        chunks_render += chunks.render.len();
+    }
+
+    let Ok(mut window) = windows.single_mut() else {
+        return;
+    };
+    window.title = format!(
+        "demo | g:{} c:{} l:{} r:{}",
+        grass_entities, chunks_total, chunks_loaded, chunks_render
+    );
 }
 
 fn setup(
@@ -93,40 +130,4 @@ fn setup(
         Camera3d::default(),
         Transform::from_xyz(-2.5, 4.5, 9.0).looking_at(Vec3::new(2.5, 3.5, 0.0), Vec3::Y),
     ));
-}
-
-fn update_debug_overlay(
-    mut window: Single<&mut Window, With<PrimaryWindow>>,
-    chunk_query: Query<&GrassChunks>,
-) {
-    let mut source_chunks = 0usize;
-    let mut loaded_chunks = 0usize;
-    let mut render_chunks = 0usize;
-    for chunks in &chunk_query {
-        source_chunks += chunks.chunks.len();
-        loaded_chunks += chunks.loaded.len();
-        render_chunks += chunks.render.len();
-    }
-
-    let render_debug = debug::render_debug_snapshot();
-    window.title = format!(
-        "demo | main s:{} l:{} r:{} | render qe:{} qh:{} pq:{} pc:{} pr:{} pp:{} pe:{} sg:{}/{} sw:{} draw:{} dc:{} di:{} miss:{}",
-        source_chunks,
-        loaded_chunks,
-        render_chunks,
-        render_debug.queued_entities,
-        render_debug.queued_chunk_handles,
-        render_debug.pipeline_queued,
-        render_debug.pipeline_creating,
-        render_debug.pipeline_ready,
-        render_debug.pipeline_pending,
-        render_debug.pipeline_error,
-        render_debug.set_grass_calls,
-        render_debug.set_grass_missing,
-        render_debug.set_wind_calls,
-        render_debug.draw_calls,
-        render_debug.drawn_chunks,
-        render_debug.drawn_instances,
-        render_debug.missing_chunk_buffers,
-    );
 }

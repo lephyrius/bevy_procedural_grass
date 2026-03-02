@@ -1,3 +1,4 @@
+use rand::RngExt;
 use std::collections::HashMap;
 
 use bevy::{
@@ -5,10 +6,10 @@ use bevy::{
     prelude::*, render::extract_component::ExtractComponent,
 };
 #[cfg(feature = "bevy-inspector-egui")]
-use bevy_inspector_egui::{prelude::ReflectInspectorOptions, InspectorOptions};
+use bevy_inspector_egui::{InspectorOptions, prelude::ReflectInspectorOptions};
 
 use bytemuck::{Pod, Zeroable};
-use rand::Rng;
+use rand::rngs::SmallRng;
 
 use crate::render::instance::{GrassChunkData, GrassData};
 
@@ -80,96 +81,92 @@ impl Grass {
         chunk_size: f32,
     ) -> HashMap<(i32, i32, i32), GrassChunkData> {
         let mut chunks: HashMap<(i32, i32, i32), GrassChunkData> = HashMap::default();
-
-        if let Some(VertexAttributeValues::Float32x3(positions)) =
+        let Some(VertexAttributeValues::Float32x3(positions)) =
             mesh.attribute(Mesh::ATTRIBUTE_POSITION)
-        {
-            let normals = match mesh.attribute(Mesh::ATTRIBUTE_NORMAL) {
-                Some(VertexAttributeValues::Float32x3(normals)) => Some(normals),
-                _ => None,
-            };
+        else {
+            return chunks;
+        };
 
-            let mut scatter_triangle = |i0: usize, i1: usize, i2: usize| {
-                let v0 = Vec3::from(positions[i0]) * transform.scale;
-                let v1 = Vec3::from(positions[i1]) * transform.scale;
-                let v2 = Vec3::from(positions[i2]) * transform.scale;
+        let normals = match mesh.attribute(Mesh::ATTRIBUTE_NORMAL) {
+            Some(VertexAttributeValues::Float32x3(normals)) => Some(normals),
+            _ => None,
+        };
 
-                let face_normal = (v1 - v0).cross(v2 - v0);
-                let mut normal = face_normal.normalize_or_zero();
-                if let Some(normals) = normals {
-                    let reference_normal = (Vec3::from(normals[i0])
-                        + Vec3::from(normals[i1])
-                        + Vec3::from(normals[i2]))
-                    .normalize_or_zero();
-                    if reference_normal != Vec3::ZERO && normal.dot(reference_normal) < 0.0 {
-                        normal = -normal;
-                    }
+        let inv_chunk_size = 1.0 / chunk_size;
+        let density = self.density as f32;
+        let mut rng: SmallRng = rand::make_rng();
+
+        let mut scatter_triangle = |i0: usize, i1: usize, i2: usize| {
+            let v0 = Vec3::from(positions[i0]) * transform.scale;
+            let v1 = Vec3::from(positions[i1]) * transform.scale;
+            let v2 = Vec3::from(positions[i2]) * transform.scale;
+
+            let face_normal = (v1 - v0).cross(v2 - v0);
+            let mut normal = face_normal.normalize_or_zero();
+            if let Some(normals) = normals {
+                let reference_normal =
+                    (Vec3::from(normals[i0]) + Vec3::from(normals[i1]) + Vec3::from(normals[i2]))
+                        .normalize_or_zero();
+                if reference_normal != Vec3::ZERO && normal.dot(reference_normal) < 0.0 {
+                    normal = -normal;
                 }
-                let area = face_normal.length() * 0.5;
-                let scaled_density = (self.density as f32 * area).ceil() as u32;
+            }
 
-                for _ in 0..scaled_density {
-                    let mut rng = rand::thread_rng();
+            let area = face_normal.length() * 0.5;
+            let scaled_density = (density * area).ceil() as u32;
+            if scaled_density == 0 {
+                return;
+            }
 
-                    let r1 = rng.gen::<f32>().sqrt();
-                    let r2 = rng.gen::<f32>();
-                    let barycentric = Vec3::new(1.0 - r1, r1 * (1.0 - r2), r1 * r2);
+            for _ in 0..scaled_density {
+                let r1 = rng.random_range(0.0..1.0_f32).sqrt();
+                let r2 = rng.random_range(0.0..1.0_f32);
+                let barycentric = Vec3::new(1.0 - r1, r1 * (1.0 - r2), r1 * r2);
 
-                    let position = (v0 * barycentric.x + v1 * barycentric.y + v2 * barycentric.z)
-                        + transform.translation;
+                let position = (v0 * barycentric.x + v1 * barycentric.y + v2 * barycentric.z)
+                    + transform.translation;
 
-                    let chunk_coords = (
-                        (position.x / chunk_size).floor() as i32,
-                        (position.y / chunk_size).floor() as i32,
-                        (position.z / chunk_size).floor() as i32,
-                    );
+                let chunk_coords = (
+                    (position.x * inv_chunk_size).floor() as i32,
+                    (position.y * inv_chunk_size).floor() as i32,
+                    (position.z * inv_chunk_size).floor() as i32,
+                );
 
-                    let chunk_base = Vec3::new(
-                        chunk_coords.0 as f32,
-                        chunk_coords.1 as f32,
-                        chunk_coords.2 as f32,
-                    ) * chunk_size;
-                    let chunk_pos = position - chunk_base;
-                    let chunk_uvw = Vec3::new(
-                        chunk_pos.x / chunk_size,
-                        chunk_pos.y / chunk_size,
-                        chunk_pos.z / chunk_size,
-                    );
+                let chunk_base = Vec3::new(
+                    chunk_coords.0 as f32,
+                    chunk_coords.1 as f32,
+                    chunk_coords.2 as f32,
+                ) * chunk_size;
+                let chunk_pos = position - chunk_base;
+                let chunk_uvw = chunk_pos * inv_chunk_size;
 
-                    let instance = GrassData {
-                        position,
-                        normal,
-                        chunk_uvw,
-                    };
+                let instance = GrassData {
+                    position,
+                    normal,
+                    chunk_uvw,
+                };
 
-                    chunks
-                        .entry(chunk_coords)
-                        .or_insert_with(|| GrassChunkData(Vec::new()))
-                        .0
-                        .push(instance);
+                chunks.entry(chunk_coords).or_default().0.push(instance);
+            }
+        };
+
+        if let Some(indices) = mesh.indices() {
+            let mut triangle = [0usize; 3];
+            let mut triangle_len = 0usize;
+            for index in indices.iter() {
+                triangle[triangle_len] = index;
+                triangle_len += 1;
+                if triangle_len != 3 {
+                    continue;
                 }
-            };
-
-            if let Some(indices) = mesh.indices() {
-                let mut triangle = Vec::with_capacity(3);
-                for index in indices.iter() {
-                    triangle.push(index);
-                    if triangle.len() != 3 {
-                        continue;
-                    }
-                    scatter_triangle(triangle[0], triangle[1], triangle[2]);
-                    triangle.clear();
-                }
-            } else {
-                for triangle in (0..positions.len()).step_by(3) {
-                    let i0 = triangle;
-                    let i1 = triangle + 1;
-                    let i2 = triangle + 2;
-                    if i2 >= positions.len() {
-                        break;
-                    }
-                    scatter_triangle(i0, i1, i2);
-                }
+                scatter_triangle(triangle[0], triangle[1], triangle[2]);
+                triangle_len = 0;
+            }
+        } else {
+            let triangle_count = positions.len() / 3;
+            for triangle_idx in 0..triangle_count {
+                let base = triangle_idx * 3;
+                scatter_triangle(base, base + 1, base + 2);
             }
         }
 
@@ -216,7 +213,7 @@ impl Default for GrassColor {
     }
 }
 
-#[derive(Component, Clone, Copy, Pod, Zeroable)]
+#[derive(Component, Clone, Copy, PartialEq, Pod, Zeroable)]
 #[cfg_attr(feature = "bevy-inspector-egui", derive(Reflect, InspectorOptions))]
 #[cfg_attr(feature = "bevy-inspector-egui", reflect(InspectorOptions))]
 #[repr(C)]

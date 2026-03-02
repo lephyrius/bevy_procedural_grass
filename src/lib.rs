@@ -3,10 +3,10 @@ use bevy::{
     core_pipeline::core_3d::Opaque3d,
     prelude::*,
     render::{
-        extract_component::ExtractComponentPlugin, extract_resource::ExtractResourcePlugin,
-        graph::CameraDriverLabel, render_asset::RenderAssetPlugin, render_graph::RenderGraph,
-        render_phase::AddRenderCommand, render_resource::SpecializedMeshPipelines,
-        view::NoIndirectDrawing, Render, RenderApp, RenderStartup, RenderSystems,
+        Render, RenderApp, RenderStartup, RenderSystems, extract_component::ExtractComponentPlugin,
+        extract_resource::ExtractResourcePlugin, graph::CameraDriverLabel,
+        render_asset::RenderAssetPlugin, render_graph::RenderGraph, render_phase::AddRenderCommand,
+        render_resource::SpecializedMeshPipelines, view::NoIndirectDrawing,
     },
 };
 
@@ -23,19 +23,18 @@ use render::{
     pipeline::GrassPipeline,
 };
 
-pub mod debug;
 pub mod grass;
 mod render;
 mod util;
 
 pub mod prelude {
+    pub use crate::ProceduralGrassPlugin;
     pub use crate::grass::{
         config::GrassConfig,
         grass::{Grass, GrassBundle, GrassLODMesh},
         mesh::GrassMesh,
         wind::{GrassWind, Wind},
     };
-    pub use crate::ProceduralGrassPlugin;
 }
 
 pub(crate) const GRASS_SHADER_HANDLE: Handle<Shader> =

@@ -8,13 +8,13 @@ use bevy::{
             BindGroup, BindGroupEntries, BindingResource, Buffer, BufferBinding,
             BufferInitDescriptor, BufferUsages, PipelineCache,
         },
-        renderer::RenderDevice,
+        renderer::{RenderDevice, RenderQueue},
         texture::{FallbackImage, GpuImage},
     },
 };
 
 use crate::grass::{
-    grass::{Blade, Grass, GrassColor},
+    grass::{Grass, GrassColor},
     wind::GrassWind,
 };
 
@@ -43,16 +43,35 @@ pub struct GrassBuffer {
 
 pub(crate) fn prepare_grass_buffers(
     mut commands: Commands,
-    query: Query<(Entity, &GrassColor, &Blade)>,
+    query: Query<(
+        Entity,
+        &GrassColor,
+        &crate::grass::grass::Blade,
+        Option<&GrassBuffer>,
+    )>,
     render_device: Res<RenderDevice>,
+    render_queue: Res<RenderQueue>,
 ) {
-    for (entity, color, blade) in &query {
+    for (entity, color, blade, grass_buffer) in &query {
+        if let Some(grass_buffer) = grass_buffer {
+            render_queue.write_buffer(
+                &grass_buffer.color_buffer,
+                0,
+                bytemuck::cast_slice(&color.to_array()),
+            );
+            render_queue.write_buffer(
+                &grass_buffer.blade_buffer,
+                0,
+                bytemuck::cast_slice(&[*blade]),
+            );
+            continue;
+        }
+
         let color_buffer = render_device.create_buffer_with_data(&BufferInitDescriptor {
             label: Some("grass color buffer"),
             contents: bytemuck::cast_slice(&color.to_array()),
             usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
         });
-
         let blade_buffer = render_device.create_buffer_with_data(&BufferInitDescriptor {
             label: Some("grass blade buffer"),
             contents: bytemuck::cast_slice(&[*blade]),
@@ -107,8 +126,19 @@ pub struct WindBuffer {
 pub(crate) fn prepare_global_wind_buffers(
     mut commands: Commands,
     render_device: Res<RenderDevice>,
+    render_queue: Res<RenderQueue>,
     wind: Res<GrassWind>,
+    wind_buffer: Option<Res<WindBuffer>>,
 ) {
+    if let Some(wind_buffer) = wind_buffer {
+        render_queue.write_buffer(
+            &wind_buffer.buffer,
+            0,
+            bytemuck::cast_slice(&[wind.wind_data]),
+        );
+        return;
+    }
+
     let buffer = render_device.create_buffer_with_data(&BufferInitDescriptor {
         label: Some("global wind buffer"),
         contents: bytemuck::cast_slice(&[wind.wind_data]),
@@ -154,10 +184,20 @@ pub(crate) fn prepare_global_wind_bind_group(
 
 pub(crate) fn prepare_local_wind_buffers(
     mut commands: Commands,
-    query: Query<(Entity, &GrassWind)>,
+    query: Query<(Entity, &GrassWind, Option<&WindBuffer>)>,
     render_device: Res<RenderDevice>,
+    render_queue: Res<RenderQueue>,
 ) {
-    for (entity, grass_wind) in &query {
+    for (entity, grass_wind, wind_buffer) in &query {
+        if let Some(wind_buffer) = wind_buffer {
+            render_queue.write_buffer(
+                &wind_buffer.buffer,
+                0,
+                bytemuck::cast_slice(&[grass_wind.wind_data]),
+            );
+            continue;
+        }
+
         let buffer = render_device.create_buffer_with_data(&BufferInitDescriptor {
             label: Some("local wind buffer"),
             contents: bytemuck::cast_slice(&[grass_wind.wind_data]),
