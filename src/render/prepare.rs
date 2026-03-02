@@ -127,6 +127,12 @@ pub struct WindBuffer {
     pub buffer: Buffer,
 }
 
+#[derive(Component, Clone)]
+pub struct LocalWindBindGroupState {
+    pub wind_map: Handle<Image>,
+    pub using_fallback: bool,
+}
+
 pub(crate) fn prepare_global_wind_buffers(
     mut commands: Commands,
     render_device: Res<RenderDevice>,
@@ -233,14 +239,30 @@ pub(crate) fn prepare_local_wind_bind_group(
     pipeline: Res<GrassPipeline>,
     pipeline_cache: Res<PipelineCache>,
     render_device: Res<RenderDevice>,
-    query: Query<(Entity, &GrassWind, &WindBuffer)>,
+    query: Query<(
+        Entity,
+        &GrassWind,
+        &WindBuffer,
+        Option<&BufferBindGroup<GrassWind>>,
+        Option<&LocalWindBindGroupState>,
+    )>,
     fallback_image: Res<FallbackImage>,
     images: Res<RenderAssets<GpuImage>>,
 ) {
     let layout = pipeline_cache.get_bind_group_layout(&pipeline.wind_layout);
 
-    for (entity, grass_wind, wind_buffer) in query.iter() {
-        let wind_map_texture = if let Some(texture) = images.get(&grass_wind.wind_map) {
+    for (entity, grass_wind, wind_buffer, existing_bind_group, existing_state) in query.iter() {
+        let maybe_wind_texture = images.get(&grass_wind.wind_map);
+        let using_fallback = maybe_wind_texture.is_none();
+        if existing_bind_group.is_some()
+            && existing_state.is_some_and(|state| {
+                state.wind_map == grass_wind.wind_map && state.using_fallback == using_fallback
+            })
+        {
+            continue;
+        }
+
+        let wind_map_texture = if let Some(texture) = maybe_wind_texture {
             &texture.texture_view
         } else {
             &fallback_image.d2.texture_view
@@ -261,6 +283,10 @@ pub(crate) fn prepare_local_wind_bind_group(
 
         commands
             .entity(entity)
-            .insert(BufferBindGroup::<GrassWind>::new(bind_group));
+            .insert(BufferBindGroup::<GrassWind>::new(bind_group))
+            .insert(LocalWindBindGroupState {
+                wind_map: grass_wind.wind_map.clone(),
+                using_fallback,
+            });
     }
 }
