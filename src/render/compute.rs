@@ -71,6 +71,9 @@ pub fn prepare_wind_compute_bind_group(
     wind: Res<GrassWind>,
     wind_buffer: Option<Res<WindBuffer>>,
     images: Res<RenderAssets<GpuImage>>,
+    existing_bind_group: Option<Res<GrassWindComputeBindGroup>>,
+    mut last_wind_map: Local<Option<Handle<Image>>>,
+    mut last_texture_size: Local<Option<UVec2>>,
 ) {
     let Some(wind_buffer) = wind_buffer else {
         return;
@@ -78,6 +81,15 @@ pub fn prepare_wind_compute_bind_group(
     let Some(wind_texture) = images.get(&wind.wind_map) else {
         return;
     };
+    let texture_size = wind_texture.size_2d();
+    if existing_bind_group.is_some()
+        && last_wind_map
+            .as_ref()
+            .is_some_and(|last_wind_map| *last_wind_map == wind.wind_map)
+        && *last_texture_size == Some(texture_size)
+    {
+        return;
+    }
 
     let layout = pipeline_cache.get_bind_group_layout(&pipeline.bind_group_layout);
     let bind_group = render_device.create_bind_group(
@@ -95,8 +107,10 @@ pub fn prepare_wind_compute_bind_group(
 
     commands.insert_resource(GrassWindComputeBindGroup {
         bind_group,
-        texture_size: wind_texture.size_2d(),
+        texture_size,
     });
+    *last_wind_map = Some(wind.wind_map.clone());
+    *last_texture_size = Some(texture_size);
 }
 
 #[derive(Default)]

@@ -90,11 +90,15 @@ pub(crate) fn prepare_grass_bind_group(
     pipeline: Res<GrassPipeline>,
     pipeline_cache: Res<PipelineCache>,
     render_device: Res<RenderDevice>,
-    query: Query<(Entity, &GrassBuffer)>,
+    query: Query<(Entity, &GrassBuffer, Option<&BufferBindGroup<Grass>>)>,
 ) {
     let layout = pipeline_cache.get_bind_group_layout(&pipeline.grass_layout);
 
-    for (entity, grass) in query.iter() {
+    for (entity, grass, existing_bind_group) in query.iter() {
+        if existing_bind_group.is_some() {
+            continue;
+        }
+
         let bind_group = render_device.create_bind_group(
             Some("grass bind group"),
             &layout,
@@ -157,10 +161,24 @@ pub(crate) fn prepare_global_wind_bind_group(
     wind_buffer: Res<WindBuffer>,
     fallback_image: Res<FallbackImage>,
     images: Res<RenderAssets<GpuImage>>,
+    existing_bind_group: Option<Res<BufferBindGroup<GrassWind>>>,
+    mut last_wind_map: Local<Option<Handle<Image>>>,
+    mut last_using_fallback: Local<bool>,
 ) {
     let layout = pipeline_cache.get_bind_group_layout(&pipeline.wind_layout);
 
-    let wind_map_texture = if let Some(texture) = images.get(&wind.wind_map) {
+    let maybe_wind_map_texture = images.get(&wind.wind_map);
+    let using_fallback = maybe_wind_map_texture.is_none();
+    if existing_bind_group.is_some()
+        && last_wind_map
+            .as_ref()
+            .is_some_and(|last_wind_map| *last_wind_map == wind.wind_map)
+        && *last_using_fallback == using_fallback
+    {
+        return;
+    }
+
+    let wind_map_texture = if let Some(texture) = maybe_wind_map_texture {
         &texture.texture_view
     } else {
         &fallback_image.d2.texture_view
@@ -180,6 +198,8 @@ pub(crate) fn prepare_global_wind_bind_group(
     );
 
     commands.insert_resource(BufferBindGroup::<GrassWind>::new(bind_group));
+    *last_wind_map = Some(wind.wind_map.clone());
+    *last_using_fallback = using_fallback;
 }
 
 pub(crate) fn prepare_local_wind_buffers(
