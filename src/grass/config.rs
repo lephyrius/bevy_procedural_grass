@@ -1,6 +1,6 @@
 use bevy::prelude::*;
 #[cfg(feature = "bevy-inspector-egui")]
-use bevy_inspector_egui::{InspectorOptions, inspector_options::ReflectInspectorOptions};
+use bevy_inspector_egui::{inspector_options::ReflectInspectorOptions, InspectorOptions};
 
 #[derive(Resource, Clone, Copy)]
 #[cfg_attr(feature = "bevy-inspector-egui", derive(Reflect, InspectorOptions))]

@@ -1,44 +1,70 @@
-use bevy::{prelude::*, render::{render_phase::{DrawFunctions, RenderPhase}, render_resource::{SpecializedMeshPipelines, PipelineCache}, render_asset::RenderAssets, view::ExtractedView}, core_pipeline::core_3d::Opaque3d, pbr::{MeshPipelineKey, RenderMeshInstances}};
+use bevy::{
+    core_pipeline::core_3d::Transparent3d,
+    pbr::{MeshPipelineKey, RenderMeshInstances},
+    prelude::*,
+    render::{
+        mesh::RenderMesh,
+        render_asset::RenderAssets,
+        render_phase::{DrawFunctions, PhaseItemExtraIndex, ViewSortedRenderPhases},
+        render_resource::{PipelineCache, SpecializedMeshPipelines},
+        sync_world::MainEntity,
+        view::ExtractedView,
+    },
+};
 
 use crate::grass::chunk::RenderGrassChunks;
 
-use super::{pipeline::GrassPipeline, draw::DrawGrass};
+use super::{draw::DrawGrass, pipeline::GrassPipeline};
 
 pub(crate) fn grass_queue(
-    opaque_3d_draw_functions: Res<DrawFunctions<Opaque3d>>,
+    transparent_3d_draw_functions: Res<DrawFunctions<Transparent3d>>,
     custom_pipeline: Res<GrassPipeline>,
-    msaa: Res<Msaa>,
     mut pipelines: ResMut<SpecializedMeshPipelines<GrassPipeline>>,
     pipeline_cache: Res<PipelineCache>,
-    meshes: Res<RenderAssets<Mesh>>,
+    meshes: Res<RenderAssets<RenderMesh>>,
     render_mesh_instances: Res<RenderMeshInstances>,
-    material_meshes: Query<Entity, With<RenderGrassChunks>>,
-    mut views: Query<(&ExtractedView, &mut RenderPhase<Opaque3d>)>,
+    grass_meshes: Query<(Entity, &MainEntity, &RenderGrassChunks)>,
+    mut transparent_render_phases: ResMut<ViewSortedRenderPhases<Transparent3d>>,
+    views: Query<(&ExtractedView, &Msaa)>,
 ) {
-    let draw_custom = opaque_3d_draw_functions.read().id::<DrawGrass>();
+    let draw_custom = transparent_3d_draw_functions.read().id::<DrawGrass>();
 
-    let msaa_key = MeshPipelineKey::from_msaa_samples(msaa.samples());
-    for (view, mut opaque_phase) in &mut views {
-        let view_key = msaa_key | MeshPipelineKey::from_hdr(view.hdr);
+    for (view, msaa) in &views {
+        let Some(transparent_phase) = transparent_render_phases.get_mut(&view.retained_view_entity)
+        else {
+            continue;
+        };
+
+        let view_key = MeshPipelineKey::from_msaa_samples(msaa.samples())
+            | MeshPipelineKey::from_hdr(view.hdr);
         let rangefinder = view.rangefinder3d();
-        for entity in &material_meshes {
-            let Some(mesh_instance) = render_mesh_instances.get(&entity) else {
+
+        for (entity, main_entity, chunks) in &grass_meshes {
+            if chunks.0.is_empty() {
+                continue;
+            }
+            let Some(mesh_instance) = render_mesh_instances.render_mesh_queue_data(*main_entity)
+            else {
                 continue;
             };
             let Some(mesh) = meshes.get(mesh_instance.mesh_asset_id) else {
                 continue;
             };
-            let key = view_key | MeshPipelineKey::from_primitive_topology(mesh.primitive_topology);
+
+            let key =
+                view_key | MeshPipelineKey::from_primitive_topology(mesh.primitive_topology());
             let pipeline = pipelines
                 .specialize(&pipeline_cache, &custom_pipeline, key, &mesh.layout)
                 .unwrap();
-            opaque_phase.add(Opaque3d {
-                entity,
+
+            transparent_phase.add(Transparent3d {
+                entity: (entity, *main_entity),
                 pipeline,
                 draw_function: draw_custom,
-                distance: rangefinder.distance_translation(&mesh_instance.transforms.transform.translation),
+                distance: rangefinder.distance(&mesh_instance.center),
                 batch_range: 0..1,
-                dynamic_offset: None,
+                extra_index: PhaseItemExtraIndex::None,
+                indexed: true,
             });
         }
     }

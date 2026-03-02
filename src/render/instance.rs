@@ -1,4 +1,13 @@
-use bevy::{prelude::*, reflect::TypeUuid, render::{render_asset::{RenderAsset, PrepareAssetError}, render_resource::{Buffer, BufferInitDescriptor, BufferUsages}, renderer::RenderDevice}, ecs::system::{lifetimeless::SRes, SystemParamItem}};
+use bevy::{
+    asset::AssetId,
+    ecs::system::{lifetimeless::SRes, SystemParamItem},
+    prelude::*,
+    render::{
+        render_asset::{PrepareAssetError, RenderAsset},
+        render_resource::{Buffer, BufferInitDescriptor, BufferUsages},
+        renderer::RenderDevice,
+    },
+};
 use bytemuck::{Pod, Zeroable};
 
 #[derive(Clone, Copy, Pod, Zeroable, Reflect, Debug)]
@@ -9,13 +18,7 @@ pub struct GrassData {
     pub chunk_uvw: Vec3,
 }
 
-pub struct GrassChunkBuffer {
-    pub buffer: Buffer,
-    pub length: usize,
-}
-
-#[derive(Component, Deref, Clone, Asset, TypeUuid, TypePath)]
-#[uuid = "81a29e63-ef6c-4561-b49c-4a138ff39c01"]
+#[derive(Component, Deref, Clone, Asset, TypePath)]
 pub struct GrassChunkData(pub Vec<GrassData>);
 
 impl Default for GrassChunkData {
@@ -24,30 +27,30 @@ impl Default for GrassChunkData {
     }
 }
 
-impl RenderAsset for GrassChunkData {
-    type ExtractedAsset = GrassChunkData;
-    type PreparedAsset = GrassChunkBuffer;
+pub struct GrassChunkBuffer {
+    pub buffer: Buffer,
+    pub length: usize,
+}
+
+impl RenderAsset for GrassChunkBuffer {
+    type SourceAsset = GrassChunkData;
     type Param = SRes<RenderDevice>;
 
-    fn extract_asset(&self) -> Self::ExtractedAsset {
-        GrassChunkData(self.0.clone())
-    }
-
     fn prepare_asset(
-            extracted_asset: Self::ExtractedAsset,
-            param: &mut SystemParamItem<Self::Param>,
-        ) -> Result<Self::PreparedAsset, PrepareAssetError<Self::ExtractedAsset>> {
-        let render_device = param;
-
+        source_asset: Self::SourceAsset,
+        _asset_id: AssetId<Self::SourceAsset>,
+        render_device: &mut SystemParamItem<Self::Param>,
+        _previous_asset: Option<&Self>,
+    ) -> Result<Self, PrepareAssetError<Self::SourceAsset>> {
         let buffer = render_device.create_buffer_with_data(&BufferInitDescriptor {
-            label: None,
-            contents:  bytemuck::cast_slice(extracted_asset.as_slice()),
-            usage: BufferUsages::VERTEX | BufferUsages::COPY_DST | BufferUsages::STORAGE
+            label: Some("grass chunk instance buffer"),
+            contents: bytemuck::cast_slice(source_asset.as_slice()),
+            usage: BufferUsages::VERTEX | BufferUsages::COPY_DST | BufferUsages::STORAGE,
         });
 
-        Ok(GrassChunkBuffer {
+        Ok(Self {
             buffer,
-            length: extracted_asset.len(),
+            length: source_asset.len(),
         })
     }
 }

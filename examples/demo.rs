@@ -1,7 +1,5 @@
-use bevy::{prelude::*, render::mesh::VertexAttributeValues};
+use bevy::prelude::*;
 use bevy_procedural_grass::prelude::*;
-
-use noise::NoiseFn;
 
 fn main() {
     App::new()
@@ -11,12 +9,16 @@ fn main() {
                 config: GrassConfig::default(),
                 wind: GrassWind {
                     wind_data: Wind {
-                        speed: 0.1,
-                        amplitude: 4.,
+                        speed: 0.18,
+                        amplitude: 1.4,
+                        frequency: 1.6,
+                        direction: 35.0,
+                        oscillation: 0.75,
+                        scale: 55.0,
                         ..default()
                     },
                     ..default()
-                }
+                },
             },
         ))
         .add_systems(Startup, setup)
@@ -28,67 +30,52 @@ fn setup(
     mut materials: ResMut<Assets<StandardMaterial>>,
     mut meshes: ResMut<Assets<Mesh>>,
 ) {
-    let mut terrain_mesh = Mesh::from(shape::Plane { size: 100.0, subdivisions: 100 });
-    if let Some(positions) = terrain_mesh.attribute_mut(Mesh::ATTRIBUTE_POSITION) {
-        if let VertexAttributeValues::Float32x3(positions) = positions {
-            for position in positions.iter_mut() {
-                let y = noise::Perlin::new(1).get([((position[0]) * 0.05) as f64, ((position[2]) * 0.05) as f64]) as f32;
-                position[1] += y;
-            }
-        }
-    }
-
-    let terrain = commands.spawn((
-        PbrBundle {
-            mesh: meshes.add(terrain_mesh),
-            material: materials.add(StandardMaterial {
-                base_color: Color::rgb(0.0, 0.05, 0.0),
+    let terrain = commands
+        .spawn((
+            Mesh3d(meshes.add(Plane3d::default().mesh().size(100.0, 100.0))),
+            MeshMaterial3d(materials.add(StandardMaterial {
+                base_color: Color::srgb(0.0, 0.05, 0.0),
                 reflectance: 0.0,
-                
                 ..default()
-            }),
-            transform: Transform::from_scale(Vec3::new(1.0, 3.0, 1.0)),
+            })),
+            Transform::from_scale(Vec3::new(1.0, 3.0, 1.0)),
+        ))
+        .id();
+
+    commands.spawn(GrassBundle {
+        mesh: Mesh3d(meshes.add(GrassMesh::mesh(7))),
+        lod: GrassLODMesh::new(meshes.add(GrassMesh::mesh(3))),
+        grass: Grass {
+            entity: Some(terrain),
             ..default()
         },
-    )).id();
+        ..default()
+    });
 
-    commands.spawn(
-        GrassBundle {
-            mesh: meshes.add(GrassMesh::mesh(7)),
-            lod: GrassLODMesh::new(meshes.add(GrassMesh::mesh(3))),
-            grass: Grass {
-                entity: Some(terrain.clone()),
-                ..default()
-            },
+    commands.spawn((
+        Mesh3d(meshes.add(Cylinder::new(0.75, 4.0))),
+        MeshMaterial3d(materials.add(StandardMaterial {
+            base_color: Color::srgb(1.0, 1.0, 1.0),
             ..default()
-        },
-    );
+        })),
+        Transform::from_xyz(0.0, 2.0, 0.0),
+    ));
 
-    commands.spawn(
-        PbrBundle {
-            mesh: meshes.add(Mesh::from(shape::Cylinder { radius: 0.75, height: 4.0, ..default()})),
-            material: materials.add(StandardMaterial::from(Color::WHITE)),
-            transform: Transform::from_translation(Vec3::new(0.0, 2.0, 0.0)),
-            ..default()
-        }
-    );
-
-    commands.spawn(DirectionalLightBundle {
-        directional_light: DirectionalLight {
+    commands.spawn((
+        DirectionalLight {
             shadows_enabled: true,
             ..default()
         },
-        transform: Transform::from_rotation(Quat::from_xyzw(
-            -0.4207355,
-            -0.4207355,
-            0.22984886,
-            0.77015114,
+        Transform::from_rotation(Quat::from_xyzw(
+            -0.420_735_5,
+            -0.420_735_5,
+            0.229_848_86,
+            0.770_151_14,
         )),
-        ..default()
-    });
+    ));
 
-    commands.spawn(Camera3dBundle {
-        transform: Transform::from_xyz(-2.5, 4.5, 9.0).looking_at(Vec3::new(2.5, 3.5, 0.0), Vec3::Y),
-        ..default()
-    });
+    commands.spawn((
+        Camera3d::default(),
+        Transform::from_xyz(-2.5, 6.0, 12.0).looking_at(Vec3::new(2.5, 3.5, 0.0), Vec3::Y),
+    ));
 }

@@ -23,7 +23,7 @@ struct Color {
     color_1: vec4<f32>,
     color_2: vec4<f32>,
 };
-@group(2) @binding(0)
+@group(3) @binding(0)
 var<uniform> color: Color;
 
 struct Blade {
@@ -36,7 +36,7 @@ struct Blade {
     curve: f32,
     specular: f32,
 }
-@group(2) @binding(1)
+@group(3) @binding(1)
 var<uniform> blade: Blade;
 
 struct Wind {
@@ -48,10 +48,10 @@ struct Wind {
     scale: f32,
     _padding: vec2<f32>,
 };
-@group(3) @binding(0)
+@group(4) @binding(0)
 var<uniform> wind: Wind;
 
-@group(3) @binding(1)
+@group(4) @binding(1)
 var t_wind_map: texture_2d<f32>;
 
 struct VertexOutput {
@@ -80,16 +80,15 @@ fn vertex(vertex: Vertex) -> VertexOutput {
 
     let random_point = vec2<f32>(fract(vertex.i_pos.x * 0.1 * hash_id), fract(vertex.i_pos.y * 0.1 * hash_id));
     let r = sample_wind_map(random_point, wind.speed).r;
-    
+
     var wind_pos = fract(vec2<f32>(vertex.i_pos.x, vertex.i_pos.z) / wind.scale);
-    let sample = sample_wind_map(wind_pos, wind.speed).rgb;
-    let t = unpack_float(sample);
+    let t = sample_wind_map(wind_pos, wind.speed).r;
 
     let blade_length = mix(blade.length, blade.length + blade.length / 2., fract(hash_id));
 
     let theta = 2.0 * PI * random1D(hash_id);
     let radius = blade_length * mix(blade.tilt - blade.tilt_variance, blade.tilt, fract(hash_id * 123.));
-    var xz = radius * vec2<f32>(cos(theta), sin(theta)); 
+    var xz = radius * vec2<f32>(cos(theta), sin(theta));
     let base_p3 = vec3<f32>(xz.x, sqrt(blade_length * blade_length - dot(xz, xz)), xz.y);
     let base_normal = normalize(vec2<f32>(-base_p3.z, base_p3.x));
 
@@ -98,7 +97,7 @@ fn vertex(vertex: Vertex) -> VertexOutput {
     //let angle = xz_displacement.r * 2.0 * PI;
     //let displace_direction = vec2<f32>(-cos(angle), -sin(angle));
     //var displace_strength = xz_displacement.a * (1.0 - clamp(abs(xz_displacement.b - vertex.i_chunk_uvw.y) / (length / 30.0), 0.0, 1.0));
-    
+
     //xz += displace_direction * (length + blade.tilt) * displace_strength;
 
     xz += -wind_direction * (0.5 * (sin(t * wind.frequency))) * wind.amplitude;
@@ -133,11 +132,11 @@ fn vertex(vertex: Vertex) -> VertexOutput {
     var normal = normalize(cross(tangent, vec3<f32>(blade_dir_normal.x, 0.0, blade_dir_normal.y)));
     normal = rotation_matrix * normal;
     out.normal = normal;
-    
+
     position += vertex.i_pos.xyz;
 
     out.clip_position = mesh_position_local_to_clip(
-        identity_matrix, 
+        identity_matrix,
         vec4<f32>(position, 1.0)
     );
 
@@ -232,14 +231,14 @@ fn bezier_tangent(t: f32, p0: vec3<f32>, p1: vec3<f32>, p2: vec3<f32>, p3: vec3<
     let u = 1.0 - t;
     let u2 = u * u;
     let t2 = t * t;
-    
+
     let tangent = -3.0 * u2 * p0
         + 3.0 * u2 * p1
         - 6.0 * u * t * p1
         + 6.0 * u * t * p2
         - 3.0 * t2 * p2
         + 3.0 * t2 * p3;
-    
+
     return tangent;
 }
 
@@ -249,10 +248,10 @@ fn rotate_align(v1: vec3<f32>, v2: vec3<f32>) -> mat3x3<f32> {
     let cos_a = dot(v1, v2);
     let k = 1.0 / (1.0 + cos_a);
 
-    let result = mat3x3f( 
+    let result = mat3x3f(
             (axis.x * axis.x * k) + cos_a, (axis.x * axis.y * k) + axis.z, (axis.x * axis.z * k) - axis.y,
-            (axis.y * axis.x * k) - axis.z, (axis.y * axis.y * k) + cos_a,  (axis.y * axis.z * k) + axis.x, 
-            (axis.z * axis.x * k) + axis.y, (axis.z * axis.y * k) - axis.x, (axis.z * axis.z * k) + cos_a 
+            (axis.y * axis.x * k) - axis.z, (axis.y * axis.y * k) + cos_a,  (axis.y * axis.z * k) + axis.x,
+            (axis.z * axis.x * k) + axis.y, (axis.z * axis.y * k) - axis.x, (axis.z * axis.z * k) + cos_a
         );
 
     return result;
@@ -260,12 +259,12 @@ fn rotate_align(v1: vec3<f32>, v2: vec3<f32>) -> mat3x3<f32> {
 
 fn sample_wind_map(uv: vec2<f32>, speed: f32) -> vec4<f32> {
     let texture_size = textureDimensions(t_wind_map);
-    
+
     let rad = wind.direction * PI / 180.0;
     let direction = vec2<f32>(cos(rad), sin(rad));
-    
+
     let scrolled_uv = uv + direction * globals.time * speed;
-    
+
     let pixel_coords = vec2<i32>(fract(scrolled_uv) * vec2<f32>(texture_size));
     return textureLoad(t_wind_map, pixel_coords, 0);
 }
@@ -276,14 +275,3 @@ const identity_matrix: mat4x4<f32> = mat4x4<f32>(
     vec4<f32>(0.0, 0.0, 1.0, 0.0),
     vec4<f32>(0.0, 0.0, 0.0, 1.0)
 );
-
-fn unpack_float(rgb: vec3<f32>) -> f32 {
-    let r = rgb.r * 255.0;
-    let g = rgb.g * 255.0;
-    let b = rgb.b * 255.0;
-
-    let noise_scaled = r * 65536.0 + g * 256.0 + b;
-    let noise = noise_scaled / 16777215.0;
-
-    return noise;
-}

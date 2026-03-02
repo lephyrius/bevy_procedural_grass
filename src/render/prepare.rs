@@ -1,8 +1,22 @@
 use std::marker::PhantomData;
 
-use bevy::{prelude::*, render::{render_resource::{BufferInitDescriptor, BufferUsages, BindGroup, BindingResource, BufferBinding, BindGroupEntries, Buffer}, renderer::RenderDevice, texture::FallbackImage, render_asset::RenderAssets}};
+use bevy::{
+    prelude::*,
+    render::{
+        render_asset::RenderAssets,
+        render_resource::{
+            BindGroup, BindGroupEntries, BindingResource, Buffer, BufferBinding,
+            BufferInitDescriptor, BufferUsages, PipelineCache,
+        },
+        renderer::RenderDevice,
+        texture::{FallbackImage, GpuImage},
+    },
+};
 
-use crate::grass::{wind::GrassWind, grass::{Blade, GrassColor, Grass}, chunk::RenderGrassChunks};
+use crate::grass::{
+    grass::{Blade, Grass, GrassColor},
+    wind::GrassWind,
+};
 
 use super::pipeline::GrassPipeline;
 
@@ -16,7 +30,7 @@ impl<T> BufferBindGroup<T> {
     pub fn new(bind_group: BindGroup) -> Self {
         Self {
             bind_group,
-            _marker:  PhantomData,
+            _marker: PhantomData,
         }
     }
 }
@@ -30,19 +44,19 @@ pub struct GrassBuffer {
 pub(crate) fn prepare_grass_buffers(
     mut commands: Commands,
     query: Query<(Entity, &GrassColor, &Blade)>,
-    render_device: Res<RenderDevice>
+    render_device: Res<RenderDevice>,
 ) {
     for (entity, color, blade) in &query {
         let color_buffer = render_device.create_buffer_with_data(&BufferInitDescriptor {
-            label: Some("color buffer"),
+            label: Some("grass color buffer"),
             contents: bytemuck::cast_slice(&color.to_array()),
-            usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST
+            usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
         });
 
         let blade_buffer = render_device.create_buffer_with_data(&BufferInitDescriptor {
-            label: Some("blade buffer"),
-            contents: bytemuck::cast_slice(&[blade.clone()]),
-            usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST
+            label: Some("grass blade buffer"),
+            contents: bytemuck::cast_slice(&[*blade]),
+            usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
         });
 
         commands.entity(entity).insert(GrassBuffer {
@@ -55,10 +69,11 @@ pub(crate) fn prepare_grass_buffers(
 pub(crate) fn prepare_grass_bind_group(
     mut commands: Commands,
     pipeline: Res<GrassPipeline>,
+    pipeline_cache: Res<PipelineCache>,
     render_device: Res<RenderDevice>,
-    query: Query<(Entity, &GrassBuffer)>, 
+    query: Query<(Entity, &GrassBuffer)>,
 ) {
-    let layout = pipeline.grass_layout.clone();
+    let layout = pipeline_cache.get_bind_group_layout(&pipeline.grass_layout);
 
     for (entity, grass) in query.iter() {
         let bind_group = render_device.create_bind_group(
@@ -74,17 +89,19 @@ pub(crate) fn prepare_grass_bind_group(
                     buffer: &grass.blade_buffer,
                     offset: 0,
                     size: None,
-                }
+                },
             )),
         );
 
-        commands.entity(entity).insert(BufferBindGroup::<Grass>::new(bind_group));
+        commands
+            .entity(entity)
+            .insert(BufferBindGroup::<Grass>::new(bind_group));
     }
 }
 
 #[derive(Component, Resource, Clone)]
 pub struct WindBuffer {
-    buffer: Buffer,
+    pub buffer: Buffer,
 }
 
 pub(crate) fn prepare_global_wind_buffers(
@@ -93,35 +110,34 @@ pub(crate) fn prepare_global_wind_buffers(
     wind: Res<GrassWind>,
 ) {
     let buffer = render_device.create_buffer_with_data(&BufferInitDescriptor {
-        label: Some("wind buffer"),
-        contents: bytemuck::cast_slice(&[wind.wind_data.clone()]),
-        usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST
+        label: Some("global wind buffer"),
+        contents: bytemuck::cast_slice(&[wind.wind_data]),
+        usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
     });
 
-    commands.insert_resource(WindBuffer {
-        buffer,
-    });
+    commands.insert_resource(WindBuffer { buffer });
 }
 
 pub(crate) fn prepare_global_wind_bind_group(
     mut commands: Commands,
     pipeline: Res<GrassPipeline>,
+    pipeline_cache: Res<PipelineCache>,
     render_device: Res<RenderDevice>,
     wind: Res<GrassWind>,
     wind_buffer: Res<WindBuffer>,
-    fallback_img: Res<FallbackImage>,
-    images: Res<RenderAssets<Image>>,
+    fallback_image: Res<FallbackImage>,
+    images: Res<RenderAssets<GpuImage>>,
 ) {
-    let layout = pipeline.wind_layout.clone();
+    let layout = pipeline_cache.get_bind_group_layout(&pipeline.wind_layout);
 
     let wind_map_texture = if let Some(texture) = images.get(&wind.wind_map) {
         &texture.texture_view
     } else {
-        &fallback_img.d2.texture_view
+        &fallback_image.d2.texture_view
     };
 
     let bind_group = render_device.create_bind_group(
-        Some("wind bind group"), 
+        Some("global wind bind group"),
         &layout,
         &BindGroupEntries::sequential((
             BufferBinding {
@@ -129,8 +145,8 @@ pub(crate) fn prepare_global_wind_bind_group(
                 offset: 0,
                 size: None,
             },
-            BindingResource::TextureView(&wind_map_texture)
-        ))
+            BindingResource::TextureView(wind_map_texture),
+        )),
     );
 
     commands.insert_resource(BufferBindGroup::<GrassWind>::new(bind_group));
@@ -144,31 +160,30 @@ pub(crate) fn prepare_local_wind_buffers(
     for (entity, grass_wind) in &query {
         let buffer = render_device.create_buffer_with_data(&BufferInitDescriptor {
             label: Some("local wind buffer"),
-            contents: bytemuck::cast_slice(&[grass_wind.wind_data.clone()]),
-            usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST
+            contents: bytemuck::cast_slice(&[grass_wind.wind_data]),
+            usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
         });
 
-        commands.entity(entity).insert(WindBuffer {
-            buffer,
-        });
+        commands.entity(entity).insert(WindBuffer { buffer });
     }
 }
 
 pub(crate) fn prepare_local_wind_bind_group(
     mut commands: Commands,
     pipeline: Res<GrassPipeline>,
+    pipeline_cache: Res<PipelineCache>,
     render_device: Res<RenderDevice>,
     query: Query<(Entity, &GrassWind, &WindBuffer)>,
-    fallback_img: Res<FallbackImage>,
-    images: Res<RenderAssets<Image>>,
+    fallback_image: Res<FallbackImage>,
+    images: Res<RenderAssets<GpuImage>>,
 ) {
-    let layout = pipeline.wind_layout.clone();
+    let layout = pipeline_cache.get_bind_group_layout(&pipeline.wind_layout);
 
     for (entity, grass_wind, wind_buffer) in query.iter() {
         let wind_map_texture = if let Some(texture) = images.get(&grass_wind.wind_map) {
             &texture.texture_view
         } else {
-            &fallback_img.d2.texture_view
+            &fallback_image.d2.texture_view
         };
 
         let bind_group = render_device.create_bind_group(
@@ -180,10 +195,12 @@ pub(crate) fn prepare_local_wind_bind_group(
                     offset: 0,
                     size: None,
                 },
-                BindingResource::TextureView(&wind_map_texture)
-            ))
+                BindingResource::TextureView(wind_map_texture),
+            )),
         );
 
-        commands.entity(entity).insert(BufferBindGroup::<GrassWind>::new(bind_group));
+        commands
+            .entity(entity)
+            .insert(BufferBindGroup::<GrassWind>::new(bind_group));
     }
 }

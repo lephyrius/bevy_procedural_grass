@@ -12,13 +12,13 @@ documentation = "https://docs.rs/bevy_procedural_grass/latest/bevy_procedural_gr
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-bevy-inspector-egui = { version = "0.22.1", optional = true }
+bevy-inspector-egui = { version = "0.36", optional = true }
 bytemuck = "1.14.0"
 noise = "0.8.2"
 rand = "0.8.5"
 
 [dependencies.bevy]
-version = "0.12.1"
+version = "0.18"
 default-features = false
 features = [ "bevy_core_pipeline", "bevy_render", "bevy_asset", "bevy_pbr", "bevy_gizmos" ]
 
@@ -27,8 +27,7 @@ version = "0.24.8"
 features = ["png", "jpeg"]
 
 [dev-dependencies]
-bevy_flycam = "0.12.0"
-bevy = { version = "0.12.1", default-features = false, features = ["bevy_winit", "x11", "tonemapping_luts", "webgl2"] }
+bevy = { version = "0.18", default-features = false, features = ["bevy_winit", "x11", "tonemapping_luts", "zstd_rust"] }
 
 [features]
 bevy-inspector-egui = ["dep:bevy-inspector-egui"]
