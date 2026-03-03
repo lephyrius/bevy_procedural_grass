@@ -1,7 +1,7 @@
 use bevy::{
     core_pipeline::core_3d::{Opaque3d, Opaque3dBatchSetKey, Opaque3dBinKey},
     ecs::change_detection::Tick,
-    pbr::{MeshPipelineKey, RenderMeshInstances},
+    pbr::{MeshPipelineKey, RenderMeshInstances, ViewKeyCache},
     prelude::*,
     render::{
         mesh::{RenderMesh, allocator::MeshAllocator},
@@ -26,6 +26,7 @@ pub(crate) fn grass_queue(
     render_mesh_instances: Res<RenderMeshInstances>,
     grass_meshes: Query<(Entity, &MainEntity, &RenderGrassChunks)>,
     mut opaque_render_phases: ResMut<ViewBinnedRenderPhases<Opaque3d>>,
+    view_key_cache: Option<Res<ViewKeyCache>>,
     views: Query<(&ExtractedView, &Msaa)>,
     mesh_allocator: Res<MeshAllocator>,
     mut change_tick: Local<Tick>,
@@ -37,8 +38,12 @@ pub(crate) fn grass_queue(
             continue;
         };
 
-        let view_key = MeshPipelineKey::from_msaa_samples(msaa.samples())
+        let fallback_view_key = MeshPipelineKey::from_msaa_samples(msaa.samples())
             | MeshPipelineKey::from_hdr(view.hdr);
+        let view_key = view_key_cache
+            .as_ref()
+            .and_then(|cache| cache.get(&view.retained_view_entity).copied())
+            .unwrap_or(fallback_view_key);
 
         for (entity, main_entity, chunks) in &grass_meshes {
             if chunks.0.is_empty() {
@@ -53,8 +58,7 @@ pub(crate) fn grass_queue(
             };
             let (vertex_slab, index_slab) = mesh_allocator.mesh_slabs(&mesh_instance.mesh_asset_id);
 
-            let key =
-                view_key | MeshPipelineKey::from_primitive_topology(mesh.primitive_topology());
+            let key = view_key | MeshPipelineKey::from_bits_retain(mesh.key_bits.bits());
             let pipeline = pipelines
                 .specialize(&pipeline_cache, &custom_pipeline, key, &mesh.layout)
                 .unwrap();
