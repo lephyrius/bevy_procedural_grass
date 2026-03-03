@@ -68,6 +68,7 @@ fn setup(
 Deferred variants of the examples are available:
 - `cargo run --example grass_deferred`
 - `cargo run --example demo_deferred`
+- `cargo run --example demo_deferred_pass_id`
 - `cargo run --example sphere_deferred`
 - `cargo run --example inspect_deferred --features bevy-inspector-egui`
 
