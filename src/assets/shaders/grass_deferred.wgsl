@@ -1,5 +1,6 @@
 #import bevy_pbr::mesh_functions::mesh_position_local_to_clip
 #import bevy_pbr::pbr_deferred_functions::deferred_gbuffer_from_pbr_input
+#import bevy_pbr::pbr_prepass_functions::calculate_motion_vector
 #import bevy_pbr::pbr_types
 #import bevy_render::globals::Globals
 
@@ -60,6 +61,10 @@ struct VertexOutput {
     @location(0) uv: vec2<f32>,
     @location(1) normal: vec3<f32>,
     @location(2) bezier_tangent: vec3<f32>,
+#ifdef MOTION_VECTOR_PREPASS
+    @location(3) world_position: vec3<f32>,
+    @location(4) previous_world_position: vec3<f32>,
+#endif
 };
 
 struct GrassDeferredFragmentOutput {
@@ -93,16 +98,24 @@ fn vertex(vertex: Vertex) -> VertexOutput {
 
     let random_point = vec2<f32>(fract(vertex.i_pos.x * 0.1 * hash_id), fract(vertex.i_pos.y * 0.1 * hash_id));
     let r = sample_wind_map(random_point, wind.speed).r;
+    let prev_time = globals.time - globals.delta_time;
+#ifdef MOTION_VECTOR_PREPASS
+    let prev_r = sample_wind_map_at_time(random_point, wind.speed, prev_time).r;
+#endif
 
     let wind_pos = fract(vec2<f32>(vertex.i_pos.x, vertex.i_pos.z) / wind.scale);
     let t = sample_wind_map(wind_pos, wind.speed).r;
+#ifdef MOTION_VECTOR_PREPASS
+    let prev_t = sample_wind_map_at_time(wind_pos, wind.speed, prev_time).r;
+#endif
 
     let blade_length = mix(blade.length, blade.length + blade.length / 2.0, fract(hash_id));
 
     let theta = 2.0 * PI * random1D(hash_id);
     let radius = blade_length * mix(blade.tilt - blade.tilt_variance, blade.tilt, fract(hash_id * 123.0));
-    var xz = radius * vec2<f32>(cos(theta), sin(theta));
-    let base_p3 = vec3<f32>(xz.x, sqrt(blade_length * blade_length - dot(xz, xz)), xz.y);
+    let xz_base = radius * vec2<f32>(cos(theta), sin(theta));
+    var xz = xz_base;
+    let base_p3 = vec3<f32>(xz_base.x, sqrt(blade_length * blade_length - dot(xz_base, xz_base)), xz_base.y);
     let base_normal = normalize(vec2<f32>(-base_p3.z, base_p3.x));
 
     xz += -wind_direction * (0.5 * (sin(t * wind.frequency))) * wind.amplitude;
@@ -134,11 +147,37 @@ fn vertex(vertex: Vertex) -> VertexOutput {
     let rotation_matrix = rotate_align(vec3<f32>(0.0, 1.0, 0.0), i_normal);
     position = rotation_matrix * position;
 
+#ifdef MOTION_VECTOR_PREPASS
+    var prev_position = vertex.position;
+    var prev_xz = xz_base;
+    prev_xz += -wind_direction * (0.5 * (sin(prev_t * wind.frequency))) * wind.amplitude;
+    prev_xz += base_normal * sin(prev_r * 0.2) * wind.oscillation;
+
+    let prev_xz_len_half = length(prev_xz) * 0.5;
+    let prev_y = max(-(prev_xz_len_half * prev_xz_len_half) + blade_length, 0.01);
+    let prev_p3 = vec3<f32>(prev_xz.x, prev_y, prev_xz.y);
+
+    var prev_p1 = 0.33 * prev_p3;
+    var prev_p2 = 0.66 * prev_p3;
+    prev_p1 += blade_normal * (prev_y - blade_length) * mix(blade.p1_flexibility, blade.p1_flexibility + 0.2, fract(hash_id * 99.0));
+    prev_p2 += blade_normal * (prev_y - blade_length) * mix(blade.p2_flexibility, blade.p2_flexibility + 0.2, fract(hash_id * 2480.0));
+
+    let prev_bezier = cubic_bezier(uv.y, p0, prev_p1, prev_p2, prev_p3);
+    prev_position.y = prev_bezier.y;
+    let prev_xz_pos = prev_bezier.xz + (base_normal * vertex.position.x * width);
+    prev_position.x = prev_xz_pos.x;
+    prev_position.z = prev_xz_pos.y;
+    prev_position = rotation_matrix * prev_position;
+#endif
+
     var normal = normalize(cross(tangent, vec3<f32>(blade_dir_normal.x, 0.0, blade_dir_normal.y)));
     normal = rotation_matrix * normal;
     out.normal = normal;
 
     position += vertex.i_pos.xyz;
+#ifdef MOTION_VECTOR_PREPASS
+    prev_position += vertex.i_pos.xyz;
+#endif
 
     out.clip_position = mesh_position_local_to_clip(
         identity_matrix,
@@ -147,6 +186,10 @@ fn vertex(vertex: Vertex) -> VertexOutput {
 
     out.uv = uv;
     out.bezier_tangent = tangent;
+#ifdef MOTION_VECTOR_PREPASS
+    out.world_position = position;
+    out.previous_world_position = prev_position;
+#endif
 
     return out;
 }
@@ -172,7 +215,10 @@ fn fragment(
 #endif
 
 #ifdef MOTION_VECTOR_PREPASS
-    out.motion_vector = vec2<f32>(0.0);
+    out.motion_vector = calculate_motion_vector(
+        vec4<f32>(in.world_position, 1.0),
+        vec4<f32>(in.previous_world_position, 1.0),
+    );
 #endif
 
 #ifdef DEFERRED_PREPASS
@@ -256,7 +302,7 @@ fn rotate_align(v1: vec3<f32>, v2: vec3<f32>) -> mat3x3<f32> {
     );
 }
 
-fn sample_wind_map(uv: vec2<f32>, speed: f32) -> vec4<f32> {
+fn sample_wind_map_at_time(uv: vec2<f32>, speed: f32, time: f32) -> vec4<f32> {
     let texture_size = textureDimensions(t_wind_map);
     let texture_size_i = vec2<i32>(texture_size);
     let texture_size_f = vec2<f32>(texture_size);
@@ -264,7 +310,7 @@ fn sample_wind_map(uv: vec2<f32>, speed: f32) -> vec4<f32> {
     let rad = wind.direction * PI / 180.0;
     let direction = vec2<f32>(cos(rad), sin(rad));
 
-    let scrolled_uv = uv + direction * globals.time * speed;
+    let scrolled_uv = uv + direction * time * speed;
     let wrapped_uv = fract(scrolled_uv) * texture_size_f;
 
     let base = vec2<i32>(floor(wrapped_uv));
@@ -283,6 +329,10 @@ fn sample_wind_map(uv: vec2<f32>, speed: f32) -> vec4<f32> {
     let cx0 = mix(c00, c10, frac_uv.x);
     let cx1 = mix(c01, c11, frac_uv.x);
     return mix(cx0, cx1, frac_uv.y);
+}
+
+fn sample_wind_map(uv: vec2<f32>, speed: f32) -> vec4<f32> {
+    return sample_wind_map_at_time(uv, speed, globals.time);
 }
 
 const identity_matrix: mat4x4<f32> = mat4x4<f32>(

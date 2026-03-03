@@ -6,13 +6,13 @@ use bevy::{
 };
 use bevy_procedural_grass::prelude::*;
 use noise::NoiseFn;
-
 fn main() {
     App::new()
         .insert_resource(DefaultOpaqueRendererMethod::deferred())
         .add_plugins((
             DefaultPlugins,
             ProceduralGrassPlugin {
+                indirect_draws: true,
                 config: GrassConfig {
                     lod_distance: 110.0,
                     lod_transition: 50.0,
