@@ -162,6 +162,9 @@ fn fragment(in: VertexOutput, @builtin(front_facing) is_front: bool) -> @locatio
     let base_color = (mix(color.color_1, color.color_2, in.uv.y)).rgb;
     let ao = (mix(color.ao, vec4<f32>(1.0, 1.0, 1.0, 1.0), in.uv.y)).rgb;
     let distance = length(view.world_position - in.world_position);
+    let far_lod_start = 80.0;
+    let far_lod_end = 140.0;
+    let far_lod = clamp((distance - far_lod_start) / (far_lod_end - far_lod_start), 0.0, 1.0);
     let spec_strength = mix(0.5, 0.0, clamp((distance - 20.0) / 20.0, 0.0, 1.0)) * blade.specular;
     let roughness = clamp(1.0 - blade.specular * 8.0, 0.15, 0.95);
     let spec_power = mix(64.0, 8.0, roughness);
@@ -175,23 +178,34 @@ fn fragment(in: VertexOutput, @builtin(front_facing) is_front: bool) -> @locatio
     ), vec4<f32>(in.world_position, 1.0));
 
     let n_directional_lights = lights.n_directional_lights;
-    for (var i: u32 = 0u; i < n_directional_lights; i = i + 1u) {
-        let L = normalize(lights.directional_lights[i].direction_to_light);
+    if (far_lod > 0.0 && n_directional_lights > 0u) {
+        // Cheaper far path: single directional light, no shadows, no specular.
+        let L = normalize(lights.directional_lights[0].direction_to_light);
         let NdotL = max(dot(N, L), 0.0);
-        if (NdotL <= 0.0) {
-            continue;
-        }
+        direct = base_color * NdotL * lights.directional_lights[0].color.rgb;
+    } else {
+        for (var i: u32 = 0u; i < n_directional_lights; i = i + 1u) {
+            let L = normalize(lights.directional_lights[i].direction_to_light);
+            let NdotL = max(dot(N, L), 0.0);
+            if (NdotL <= 0.0) {
+                continue;
+            }
 
-        let shadow = clamp(shadows::fetch_directional_shadow(i, vec4<f32>(in.world_position, 1.0), in.world_normal, view_z), 0.1, 1.0);
-        let H = normalize(L + V);
-        let spec = pow(max(dot(N, H), 0.0), spec_power) * spec_strength;
-        let diffuse = base_color * NdotL;
-        let light_rgb = lights.directional_lights[i].color.rgb;
-        direct += (diffuse + vec3<f32>(spec)) * light_rgb * shadow;
+            let shadow = clamp(shadows::fetch_directional_shadow(i, vec4<f32>(in.world_position, 1.0), in.world_normal, view_z), 0.1, 1.0);
+            let H = normalize(L + V);
+            let spec = pow(max(dot(N, H), 0.0), spec_power) * spec_strength;
+            let diffuse = base_color * NdotL;
+            let light_rgb = lights.directional_lights[i].color.rgb;
+            direct += (diffuse + vec3<f32>(spec)) * light_rgb * shadow;
+        }
     }
 
     let ambient = base_color * max(lights.ambient_color.rgb, vec3<f32>(0.02));
-    let final_color = (ambient + direct) * ao * view.exposure;
+    // Blend toward cheaper far lighting smoothly to hide transition.
+    let n_directional = max(lights.n_directional_lights, 1u);
+    let direct_avg = direct / f32(n_directional);
+    let final_direct = mix(direct, direct_avg, far_lod * 0.35);
+    let final_color = (ambient + final_direct) * ao * view.exposure;
 
     return vec4<f32>(final_color.rgb, 1.0);
 }
