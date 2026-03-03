@@ -55,6 +55,19 @@ impl ExtractComponent for GrassChunks {
 #[derive(Component, Default, Clone)]
 pub struct RenderGrassChunks(pub Vec<GrassRenderInfo>);
 
+#[inline]
+fn chunk_hash_01(coords: (i32, i32, i32)) -> f32 {
+    let mut x = (coords.0 as u32).wrapping_mul(0x9E37_79B9);
+    x ^= (coords.1 as u32).wrapping_mul(0x85EB_CA6B);
+    x ^= (coords.2 as u32).wrapping_mul(0xC2B2_AE35);
+    x ^= x >> 16;
+    x = x.wrapping_mul(0x7FEB_352D);
+    x ^= x >> 15;
+    x = x.wrapping_mul(0x846C_A68B);
+    x ^= x >> 16;
+    (x as f32) * (1.0 / 4_294_967_295.0)
+}
+
 pub(crate) fn grass_culling(
     mut query: Query<&mut GrassChunks>,
     camera_query: Query<&GlobalTransform, With<Camera3d>>,
@@ -93,7 +106,11 @@ pub(crate) fn grass_culling(
             continue;
         };
 
-        let lod_distance_sq = grass_config.lod_distance * grass_config.lod_distance;
+        let lod_distance = grass_config.lod_distance;
+        let lod_distance_sq = lod_distance * lod_distance;
+        let lod_transition = grass_config.lod_transition.max(0.0);
+        let lod_far_distance = lod_distance + lod_transition;
+        let lod_far_distance_sq = lod_far_distance * lod_far_distance;
         let cull_distance_sq = grass_config.cull_distance * grass_config.cull_distance;
         let cull_dimension = chunks.cull_dimension;
 
@@ -117,10 +134,28 @@ pub(crate) fn grass_culling(
                 continue;
             }
 
-            let lod_type = if d3_distance_sq <= lod_distance_sq {
+            let lod_type = if lod_distance >= grass_config.cull_distance {
                 GrassLOD::High
-            } else {
+            } else if lod_transition <= 0.0 {
+                if d3_distance_sq <= lod_distance_sq {
+                    GrassLOD::High
+                } else {
+                    GrassLOD::Low
+                }
+            } else if d3_distance_sq <= lod_distance_sq {
+                GrassLOD::High
+            } else if d3_distance_sq >= lod_far_distance_sq {
                 GrassLOD::Low
+            } else {
+                // Dither in a transition band to avoid a hard visible LOD ring.
+                let d3_distance = d3_distance_sq.sqrt();
+                let t = ((d3_distance - lod_distance) / lod_transition).clamp(0.0, 1.0);
+                let high_probability = 1.0 - t;
+                if chunk_hash_01(chunk_coord) < high_probability {
+                    GrassLOD::High
+                } else {
+                    GrassLOD::Low
+                }
             };
 
             let handle = if let Some(handle) = chunks.loaded.get(&chunk_coord) {

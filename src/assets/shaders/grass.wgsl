@@ -255,14 +255,31 @@ fn rotate_align(v1: vec3<f32>, v2: vec3<f32>) -> mat3x3<f32> {
 
 fn sample_wind_map(uv: vec2<f32>, speed: f32) -> vec4<f32> {
     let texture_size = textureDimensions(t_wind_map);
+    let texture_size_i = vec2<i32>(texture_size);
+    let texture_size_f = vec2<f32>(texture_size);
 
     let rad = wind.direction * PI / 180.0;
     let direction = vec2<f32>(cos(rad), sin(rad));
 
     let scrolled_uv = uv + direction * globals.time * speed;
+    let wrapped_uv = fract(scrolled_uv) * texture_size_f;
 
-    let pixel_coords = vec2<i32>(fract(scrolled_uv) * vec2<f32>(texture_size));
-    return textureLoad(t_wind_map, pixel_coords, 0);
+    let base = vec2<i32>(floor(wrapped_uv));
+    let frac_uv = fract(wrapped_uv);
+
+    let x0 = ((base.x % texture_size_i.x) + texture_size_i.x) % texture_size_i.x;
+    let y0 = ((base.y % texture_size_i.y) + texture_size_i.y) % texture_size_i.y;
+    let x1 = (x0 + 1) % texture_size_i.x;
+    let y1 = (y0 + 1) % texture_size_i.y;
+
+    let c00 = textureLoad(t_wind_map, vec2<i32>(x0, y0), 0);
+    let c10 = textureLoad(t_wind_map, vec2<i32>(x1, y0), 0);
+    let c01 = textureLoad(t_wind_map, vec2<i32>(x0, y1), 0);
+    let c11 = textureLoad(t_wind_map, vec2<i32>(x1, y1), 0);
+
+    let cx0 = mix(c00, c10, frac_uv.x);
+    let cx1 = mix(c01, c11, frac_uv.x);
+    return mix(cx0, cx1, frac_uv.y);
 }
 
 const identity_matrix: mat4x4<f32> = mat4x4<f32>(

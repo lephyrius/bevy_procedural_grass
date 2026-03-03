@@ -1,5 +1,4 @@
-use bevy::{mesh::VertexAttributeValues, prelude::*, window::PrimaryWindow};
-use bevy_procedural_grass::grass::chunk::GrassChunks;
+use bevy::{mesh::VertexAttributeValues, prelude::*};
 use bevy_procedural_grass::prelude::*;
 use noise::NoiseFn;
 
@@ -8,7 +7,11 @@ fn main() {
         .add_plugins((
             DefaultPlugins,
             ProceduralGrassPlugin {
-                config: GrassConfig::default(),
+                config: GrassConfig {
+                    lod_distance: 110.0,
+                    lod_transition: 50.0,
+                    ..default()
+                },
                 wind: GrassWind {
                     wind_data: Wind {
                         speed: 0.1,
@@ -20,45 +23,7 @@ fn main() {
             },
         ))
         .add_systems(Startup, setup)
-        .add_systems(Update, update_debug_overlay)
         .run();
-}
-
-fn update_debug_overlay(
-    mut windows: Query<&mut Window, With<PrimaryWindow>>,
-    chunks_query: Query<&GrassChunks>,
-    time: Res<Time>,
-    mut tick_accum: Local<f32>,
-) {
-    if std::env::var_os("GRASS_DEBUG_OVERLAY").is_none() {
-        return;
-    }
-
-    *tick_accum += time.delta_secs();
-    if *tick_accum < 0.2 {
-        return;
-    }
-    *tick_accum = 0.0;
-
-    let mut grass_entities = 0usize;
-    let mut chunks_total = 0usize;
-    let mut chunks_loaded = 0usize;
-    let mut chunks_render = 0usize;
-
-    for chunks in &chunks_query {
-        grass_entities += 1;
-        chunks_total += chunks.chunks.len();
-        chunks_loaded += chunks.loaded.len();
-        chunks_render += chunks.render.len();
-    }
-
-    let Ok(mut window) = windows.single_mut() else {
-        return;
-    };
-    window.title = format!(
-        "demo | g:{} c:{} l:{} r:{}",
-        grass_entities, chunks_total, chunks_loaded, chunks_render
-    );
 }
 
 fn setup(
@@ -96,7 +61,7 @@ fn setup(
 
     commands.spawn(GrassBundle {
         mesh: Mesh3d(meshes.add(GrassMesh::mesh(7))),
-        lod: GrassLODMesh::new(meshes.add(GrassMesh::mesh(3))),
+        lod: GrassLODMesh::new(meshes.add(GrassMesh::mesh(5))),
         grass: Grass {
             entity: Some(terrain),
             ..default()

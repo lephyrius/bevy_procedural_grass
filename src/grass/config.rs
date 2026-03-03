@@ -8,6 +8,7 @@ use bevy_inspector_egui::{InspectorOptions, inspector_options::ReflectInspectorO
 pub struct GrassConfig {
     pub cull_distance: f32,
     pub lod_distance: f32,
+    pub lod_transition: f32,
     pub displacement_resolution: u32,
 }
 
@@ -16,6 +17,7 @@ impl Default for GrassConfig {
         Self {
             cull_distance: 200.,
             lod_distance: 50.,
+            lod_transition: 30.0,
             displacement_resolution: 90,
         }
     }
