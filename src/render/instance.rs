@@ -53,6 +53,7 @@ fn pack_unorm16(v: f32) -> u16 {
 #[derive(Default, Component, Deref, Clone, Asset, TypePath)]
 pub struct GrassChunkData(pub Vec<GrassData>);
 
+#[cfg_attr(not(feature = "forward"), allow(dead_code))]
 pub struct GrassChunkBuffer {
     pub buffer: Buffer,
     pub length: usize,

@@ -1,12 +1,23 @@
+#[cfg(feature = "forward")]
+use bevy::asset::{load_internal_asset, uuid_handle};
+#[cfg(feature = "forward")]
 use bevy::{
-    asset::{load_internal_asset, uuid_handle},
-    core_pipeline::core_3d::Opaque3d,
+    core_pipeline::{core_3d::Opaque3d, deferred::Opaque3dDeferred},
+    render::Render,
+    render::RenderApp,
+    render::RenderStartup,
+    render::RenderSystems,
+    render::graph::CameraDriverLabel,
+    render::render_graph::RenderGraph,
+    render::render_phase::AddRenderCommand,
+    render::render_resource::SpecializedMeshPipelines,
+    render::view::NoIndirectDrawing,
+};
+use bevy::{
     prelude::*,
     render::{
-        Render, RenderApp, RenderStartup, RenderSystems, extract_component::ExtractComponentPlugin,
-        extract_resource::ExtractResourcePlugin, graph::CameraDriverLabel,
-        render_asset::RenderAssetPlugin, render_graph::RenderGraph, render_phase::AddRenderCommand,
-        render_resource::SpecializedMeshPipelines, view::NoIndirectDrawing,
+        extract_component::ExtractComponentPlugin, extract_resource::ExtractResourcePlugin,
+        render_asset::RenderAssetPlugin,
     },
 };
 
@@ -16,12 +27,13 @@ use grass::{
     grass::{Grass, GrassLODMesh},
     wind::GrassWind,
 };
+use render::instance::{GrassChunkBuffer, GrassChunkData};
+#[cfg(feature = "forward")]
 use render::{
     GrassIndirectSettings,
     compute::{GrassWindComputeLabel, GrassWindComputeNode},
-    draw::DrawGrass,
-    instance::{GrassChunkBuffer, GrassChunkData},
-    pipeline::GrassPipeline,
+    draw::{DrawGrass, DrawGrassDeferred},
+    pipeline::{GrassDeferredPipeline, GrassPipeline},
 };
 
 pub mod grass;
@@ -40,12 +52,18 @@ pub mod prelude {
     pub use crate::{GrassPerformancePreset, ProceduralGrassPlugin};
 }
 
+#[cfg(feature = "forward")]
 pub(crate) const GRASS_SHADER_HANDLE: Handle<Shader> =
     uuid_handle!("6e91d4b1-491c-4a26-b15f-5fd4f57764df");
+#[cfg(feature = "forward")]
 pub(crate) const GRASS_WIND_COMPUTE_SHADER_HANDLE: Handle<Shader> =
     uuid_handle!("9ced8fce-d838-457a-a5d9-3ce7d5b6d557");
+#[cfg(feature = "forward")]
 pub(crate) const GRASS_INDIRECT_COMPUTE_SHADER_HANDLE: Handle<Shader> =
     uuid_handle!("6a5c509b-6da8-4ea2-8320-8f2f5d7bf4f6");
+#[cfg(feature = "forward")]
+pub(crate) const GRASS_DEFERRED_SHADER_HANDLE: Handle<Shader> =
+    uuid_handle!("0f4f5d16-0db2-4f58-9f5c-c381e1ee8a5c");
 
 #[derive(Clone)]
 pub struct ProceduralGrassPlugin {
@@ -69,24 +87,33 @@ impl Default for ProceduralGrassPlugin {
 
 impl Plugin for ProceduralGrassPlugin {
     fn build(&self, app: &mut App) {
-        load_internal_asset!(
-            app,
-            GRASS_SHADER_HANDLE,
-            "assets/shaders/grass.wgsl",
-            Shader::from_wgsl
-        );
-        load_internal_asset!(
-            app,
-            GRASS_WIND_COMPUTE_SHADER_HANDLE,
-            "assets/shaders/wind_compute.wgsl",
-            Shader::from_wgsl
-        );
-        load_internal_asset!(
-            app,
-            GRASS_INDIRECT_COMPUTE_SHADER_HANDLE,
-            "assets/shaders/indirect_compute.wgsl",
-            Shader::from_wgsl
-        );
+        #[cfg(feature = "forward")]
+        {
+            load_internal_asset!(
+                app,
+                GRASS_SHADER_HANDLE,
+                "assets/shaders/grass.wgsl",
+                Shader::from_wgsl
+            );
+            load_internal_asset!(
+                app,
+                GRASS_WIND_COMPUTE_SHADER_HANDLE,
+                "assets/shaders/wind_compute.wgsl",
+                Shader::from_wgsl
+            );
+            load_internal_asset!(
+                app,
+                GRASS_INDIRECT_COMPUTE_SHADER_HANDLE,
+                "assets/shaders/indirect_compute.wgsl",
+                Shader::from_wgsl
+            );
+            load_internal_asset!(
+                app,
+                GRASS_DEFERRED_SHADER_HANDLE,
+                "assets/shaders/grass_deferred.wgsl",
+                Shader::from_wgsl
+            );
+        }
 
         #[cfg(feature = "bevy-inspector-egui")]
         {
@@ -95,13 +122,13 @@ impl Plugin for ProceduralGrassPlugin {
                 .register_type::<GrassConfig>();
         }
 
+        #[cfg(feature = "forward")]
         let indirect_settings = GrassIndirectSettings {
             enabled: self.indirect_draws,
         };
 
         app.insert_resource(self.wind.clone())
             .insert_resource(self.config)
-            .insert_resource(indirect_settings)
             .add_systems(
                 Startup,
                 (
@@ -125,7 +152,6 @@ impl Plugin for ProceduralGrassPlugin {
                     grass::grass::generate_grass,
                     grass::chunk::grass_culling,
                     grass::wind::update_wind_time_decimated,
-                    ensure_no_indirect_drawing,
                 )
                     .chain(),
             )
@@ -138,70 +164,90 @@ impl Plugin for ProceduralGrassPlugin {
                 ExtractComponentPlugin::<GrassWind>::default(),
                 ExtractResourcePlugin::<GrassWind>::default(),
             ));
+        #[cfg(feature = "forward")]
+        {
+            app.insert_resource(indirect_settings);
+            app.add_systems(Update, ensure_no_indirect_drawing);
+        }
+
         if let Some(preset) = self.performance_preset {
             app.insert_resource(preset);
         }
 
-        let Some(render_app) = app.get_sub_app_mut(RenderApp) else {
-            return;
-        };
+        #[cfg(feature = "forward")]
+        {
+            let Some(render_app) = app.get_sub_app_mut(RenderApp) else {
+                return;
+            };
 
-        render_app
-            .add_render_command::<Opaque3d, DrawGrass>()
-            .init_resource::<SpecializedMeshPipelines<GrassPipeline>>()
-            .add_systems(
-                RenderStartup,
-                (
-                    render::compute::init_wind_compute_pipeline,
-                    render::compute::init_indirect_compute_pipeline,
-                ),
-            )
-            .add_systems(
-                Render,
-                (
-                    render::queue::grass_queue.in_set(RenderSystems::QueueMeshes),
-                    render::prepare::prepare_grass_buffers.in_set(RenderSystems::PrepareResources),
-                    render::prepare::prepare_indirect_buffers
-                        .in_set(RenderSystems::PrepareResources),
-                    render::prepare::prepare_global_wind_buffers
-                        .in_set(RenderSystems::PrepareResources),
-                    render::prepare::prepare_local_wind_buffers
-                        .in_set(RenderSystems::PrepareResources),
-                    render::prepare::prepare_grass_bind_group
-                        .in_set(RenderSystems::PrepareBindGroups),
-                    render::prepare::prepare_global_wind_bind_group
-                        .in_set(RenderSystems::PrepareBindGroups),
-                    render::prepare::prepare_local_wind_bind_group
-                        .in_set(RenderSystems::PrepareBindGroups),
-                    render::compute::prepare_wind_compute_bind_group
-                        .in_set(RenderSystems::PrepareBindGroups),
-                    render::compute::prepare_indirect_compute_bind_group
-                        .in_set(RenderSystems::PrepareBindGroups),
-                ),
-            )
-            .insert_resource(indirect_settings);
+            render_app
+                .add_render_command::<Opaque3d, DrawGrass>()
+                .add_render_command::<Opaque3dDeferred, DrawGrassDeferred>()
+                .init_resource::<SpecializedMeshPipelines<GrassPipeline>>()
+                .init_resource::<SpecializedMeshPipelines<GrassDeferredPipeline>>()
+                .add_systems(
+                    RenderStartup,
+                    (
+                        render::compute::init_wind_compute_pipeline,
+                        render::compute::init_indirect_compute_pipeline,
+                    ),
+                )
+                .add_systems(
+                    Render,
+                    (
+                        render::pipeline::ensure_grass_deferred_pipeline
+                            .before(RenderSystems::QueueMeshes),
+                        render::queue::grass_queue.in_set(RenderSystems::QueueMeshes),
+                        render::queue::grass_queue_deferred.in_set(RenderSystems::QueueMeshes),
+                        render::prepare::prepare_grass_buffers
+                            .in_set(RenderSystems::PrepareResources),
+                        render::prepare::prepare_indirect_buffers
+                            .in_set(RenderSystems::PrepareResources),
+                        render::prepare::prepare_global_wind_buffers
+                            .in_set(RenderSystems::PrepareResources),
+                        render::prepare::prepare_local_wind_buffers
+                            .in_set(RenderSystems::PrepareResources),
+                        render::prepare::prepare_grass_bind_group
+                            .in_set(RenderSystems::PrepareBindGroups),
+                        render::prepare::prepare_global_wind_bind_group
+                            .in_set(RenderSystems::PrepareBindGroups),
+                        render::prepare::prepare_local_wind_bind_group
+                            .in_set(RenderSystems::PrepareBindGroups),
+                        render::compute::prepare_wind_compute_bind_group
+                            .in_set(RenderSystems::PrepareBindGroups),
+                        render::compute::prepare_indirect_compute_bind_group
+                            .in_set(RenderSystems::PrepareBindGroups),
+                    ),
+                )
+                .insert_resource(indirect_settings);
 
-        let mut render_graph = render_app.world_mut().resource_mut::<RenderGraph>();
-        render_graph.add_node(GrassWindComputeLabel, GrassWindComputeNode);
-        render_graph.add_node(
-            render::compute::GrassIndirectComputeLabel,
-            render::compute::GrassIndirectComputeNode,
-        );
-        render_graph.add_node_edge(GrassWindComputeLabel, CameraDriverLabel);
-        render_graph.add_node_edge(
-            render::compute::GrassIndirectComputeLabel,
-            CameraDriverLabel,
-        );
+            let mut render_graph = render_app.world_mut().resource_mut::<RenderGraph>();
+            render_graph.add_node(GrassWindComputeLabel, GrassWindComputeNode);
+            render_graph.add_node(
+                render::compute::GrassIndirectComputeLabel,
+                render::compute::GrassIndirectComputeNode,
+            );
+            render_graph.add_node_edge(GrassWindComputeLabel, CameraDriverLabel);
+            render_graph.add_node_edge(
+                render::compute::GrassIndirectComputeLabel,
+                CameraDriverLabel,
+            );
+        }
     }
 
     fn finish(&self, app: &mut App) {
+        #[cfg(feature = "forward")]
         if let Some(render_app) = app.get_sub_app_mut(RenderApp) {
             render_app.init_resource::<GrassPipeline>();
         }
+
+        #[cfg(not(feature = "forward"))]
+        let _ = app;
     }
 }
 
 #[inline]
+#[cfg(feature = "forward")]
 fn ensure_no_indirect_drawing(
     mut commands: Commands,
     indirect_settings: Res<GrassIndirectSettings>,

@@ -16,6 +16,15 @@ bevy = "0.18"
 bevy_procedural_grass = "0.3"
 ```
 
+`forward` is enabled by default. If you are integrating your own deferred/G-buffer path,
+you can disable it:
+
+```toml
+[dependencies]
+bevy = "0.18"
+bevy_procedural_grass = { version = "0.3", default-features = false }
+```
+
 Spawn a terrain mesh and a `GrassBundle`:
 
 ```rust
@@ -55,6 +64,12 @@ fn setup(
     });
 }
 ```
+
+Deferred variants of the examples are available:
+- `cargo run --example grass_deferred`
+- `cargo run --example demo_deferred`
+- `cargo run --example sphere_deferred`
+- `cargo run --example inspect_deferred --features bevy-inspector-egui`
 
 ## Performance Presets
 Use a preset to apply coherent tuning for culling/LOD, wind compute rate, and far shading:

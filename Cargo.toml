@@ -26,6 +26,8 @@ bevy = { version = "0.18", default-features = false, features = ["bevy_winit", "
 noise = "0.9"
 
 [features]
+default = ["forward"]
+forward = []
 bevy-inspector-egui = ["dep:bevy-inspector-egui"]
 
 [profile.dev]
@@ -36,4 +38,8 @@ opt-level = 3
 
 [[example]]
 name = "inspect"
+required-features = ["bevy-inspector-egui"]
+
+[[example]]
+name = "inspect_deferred"
 required-features = ["bevy-inspector-egui"]
