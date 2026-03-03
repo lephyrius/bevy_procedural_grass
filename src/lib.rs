@@ -56,6 +56,7 @@ pub struct ProceduralGrassPlugin {
 }
 
 impl Default for ProceduralGrassPlugin {
+    #[inline]
     fn default() -> Self {
         Self {
             config: GrassConfig::default(),
@@ -200,6 +201,7 @@ impl Plugin for ProceduralGrassPlugin {
     }
 }
 
+#[inline]
 fn ensure_no_indirect_drawing(
     mut commands: Commands,
     indirect_settings: Res<GrassIndirectSettings>,

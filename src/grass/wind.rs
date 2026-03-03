@@ -27,6 +27,7 @@ pub struct Wind {
 }
 
 impl Default for Wind {
+    #[inline]
     fn default() -> Self {
         Self {
             speed: 0.15,
@@ -56,6 +57,7 @@ impl ExtractComponent for GrassWind {
     type QueryFilter = ();
     type Out = Self;
 
+    #[inline]
     fn extract_component(item: QueryItem<'_, '_, Self::QueryData>) -> Option<Self::Out> {
         Some(item.clone())
     }
@@ -64,6 +66,7 @@ impl ExtractComponent for GrassWind {
 impl ExtractResource for GrassWind {
     type Source = Self;
 
+    #[inline]
     fn extract_resource(source: &Self::Source) -> Self {
         source.clone()
     }

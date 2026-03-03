@@ -14,18 +14,22 @@ pub enum GrassPerformancePreset {
 }
 
 impl GrassPerformancePreset {
+    #[inline]
     pub fn quality() -> Self {
         Self::Quality
     }
 
+    #[inline]
     pub fn balanced() -> Self {
         Self::Balanced
     }
 
+    #[inline]
     pub fn performance() -> Self {
         Self::Performance
     }
 
+    #[inline]
     fn apply_to_config(self, config: &mut GrassConfig) {
         match self {
             Self::Quality => {
@@ -46,6 +50,7 @@ impl GrassPerformancePreset {
         }
     }
 
+    #[inline]
     fn apply_to_wind(self, wind: &mut GrassWind) {
         wind.compute_update_hz = match self {
             Self::Quality => 60.0,
@@ -54,6 +59,7 @@ impl GrassPerformancePreset {
         };
     }
 
+    #[inline]
     fn apply_to_blade(self, blade: &mut Blade) {
         match self {
             Self::Quality => {

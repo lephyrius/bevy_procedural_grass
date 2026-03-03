@@ -1,6 +1,7 @@
 use bevy::{camera::primitives::Aabb, math::Vec3A, prelude::*};
 
 #[allow(dead_code)]
+#[inline]
 pub(crate) fn aabb_transform(aabb: Aabb, transform: GlobalTransform) -> GlobalTransform {
     transform
         * GlobalTransform::from(
@@ -10,7 +11,8 @@ pub(crate) fn aabb_transform(aabb: Aabb, transform: GlobalTransform) -> GlobalTr
 }
 
 #[allow(dead_code)]
-pub(crate) fn draw_chunk(gizmos: &mut Gizmos, chunk_coord: &(i32, i32, i32), chunk_size: f32) {
+#[inline]
+pub(crate) fn draw_chunk<T>(_gizmos: &mut T, chunk_coord: &(i32, i32, i32), chunk_size: f32) {
     let aabb = Aabb {
         center: Vec3A::from((
             (chunk_coord.0 as f32 * chunk_size + chunk_size / 2.),
@@ -20,8 +22,5 @@ pub(crate) fn draw_chunk(gizmos: &mut Gizmos, chunk_coord: &(i32, i32, i32), chu
         half_extents: Vec3A::splat(chunk_size / 2.0),
     };
 
-    gizmos.cube(
-        aabb_transform(aabb, GlobalTransform::IDENTITY),
-        Color::srgb(1.0, 0.0, 0.0),
-    );
+    let _ = aabb_transform(aabb, GlobalTransform::IDENTITY);
 }

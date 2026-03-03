@@ -14,6 +14,7 @@ pub struct GrassIndirectSettings {
 }
 
 impl Default for GrassIndirectSettings {
+    #[inline]
     fn default() -> Self {
         Self { enabled: true }
     }

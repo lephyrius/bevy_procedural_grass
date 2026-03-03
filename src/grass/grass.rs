@@ -175,6 +175,7 @@ impl ExtractComponent for Grass {
     type QueryFilter = ();
     type Out = (GrassColor, Blade);
 
+    #[inline]
     fn extract_component(item: QueryItem<'_, '_, Self::QueryData>) -> Option<Self::Out> {
         Some((item.color, item.blade))
     }
@@ -190,6 +191,7 @@ pub struct GrassColor {
 }
 
 impl GrassColor {
+    #[inline]
     pub fn to_array(&self) -> [[f32; 4]; 3] {
         [
             LinearRgba::from(self.ao).to_f32_array(),
@@ -251,6 +253,7 @@ pub struct GrassLODMesh {
 }
 
 impl GrassLODMesh {
+    #[inline]
     pub fn new(mesh_handle: Handle<Mesh>) -> Self {
         Self {
             mesh_handle: Some(mesh_handle),
@@ -263,6 +266,7 @@ impl ExtractComponent for GrassLODMesh {
     type QueryFilter = ();
     type Out = Self;
 
+    #[inline]
     fn extract_component(item: QueryItem<'_, '_, Self::QueryData>) -> Option<Self::Out> {
         Some(item.clone())
     }

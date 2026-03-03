@@ -184,6 +184,11 @@ pub struct GrassIndirectComputePipeline {
     pub pipeline: bevy::render::render_resource::CachedComputePipelineId,
 }
 
+#[derive(Component, Clone, Copy)]
+pub struct GrassIndirectComputeBindGroup {
+    pub signature: u64,
+}
+
 pub struct GrassIndirectComputeDispatchItem {
     pub high: Option<(BindGroup, u32)>,
     pub low: Option<(BindGroup, u32)>,
@@ -224,16 +229,37 @@ pub fn init_indirect_compute_pipeline(mut commands: Commands, pipeline_cache: Re
 }
 
 pub fn prepare_indirect_compute_bind_group(
+    mut commands: Commands,
     mut dispatches: ResMut<GrassIndirectComputeDispatches>,
     pipeline: Res<GrassIndirectComputePipeline>,
     pipeline_cache: Res<PipelineCache>,
     render_device: Res<RenderDevice>,
-    query: Query<&GrassIndirectBuffers>,
+    query: Query<(
+        Entity,
+        &GrassIndirectBuffers,
+        Option<&GrassIndirectComputeBindGroup>,
+    )>,
+    stale_query: Query<
+        (Entity, Option<&GrassIndirectBuffers>),
+        With<GrassIndirectComputeBindGroup>,
+    >,
 ) {
     let layout = pipeline_cache.get_bind_group_layout(&pipeline.bind_group_layout);
     dispatches.0.clear();
 
-    for indirect in &query {
+    for (entity, maybe_indirect) in &stale_query {
+        if maybe_indirect.is_none() {
+            commands
+                .entity(entity)
+                .remove::<GrassIndirectComputeBindGroup>();
+        }
+    }
+
+    for (entity, indirect, existing) in &query {
+        if existing.is_some_and(|existing| existing.signature == indirect.signature) {
+            continue;
+        }
+
         let high = match (
             indirect.high_chunk_meta_buffer.as_ref(),
             indirect.high_mesh_params_buffer.as_ref(),
@@ -299,6 +325,12 @@ pub fn prepare_indirect_compute_bind_group(
             }
             _ => None,
         };
+
+        commands
+            .entity(entity)
+            .insert(GrassIndirectComputeBindGroup {
+                signature: indirect.signature,
+            });
 
         dispatches.0.push(GrassIndirectComputeDispatchItem {
             high: high.map(|bind_group| (bind_group, indirect.high_draw_count)),

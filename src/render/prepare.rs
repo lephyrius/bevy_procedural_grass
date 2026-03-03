@@ -36,6 +36,7 @@ pub struct BufferBindGroup<T> {
 }
 
 impl<T> BufferBindGroup<T> {
+    #[inline]
     pub fn new(bind_group: BindGroup) -> Self {
         Self {
             bind_group,
@@ -108,6 +109,7 @@ pub struct IndexedIndirectMeshParams {
     pub _pad0: u32,
 }
 
+#[inline]
 fn create_buffer_with_data<T: Pod>(
     render_device: &RenderDevice,
     label: &'static str,
@@ -127,6 +129,7 @@ fn create_buffer_with_data<T: Pod>(
     }
 }
 
+#[inline]
 fn create_lod_indirect_input(
     chunks: &RenderGrassChunks,
     lod_kind: GrassLOD,
@@ -162,6 +165,7 @@ fn create_lod_indirect_input(
     (instances, chunk_meta)
 }
 
+#[inline]
 fn build_indexed_indirect_cpu(
     chunk_meta: &[ChunkIndirectMeta],
     mesh: IndexedIndirectMeshParams,

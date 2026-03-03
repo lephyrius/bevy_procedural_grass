@@ -36,6 +36,7 @@ pub struct GrassChunks {
 }
 
 impl Default for GrassChunks {
+    #[inline]
     fn default() -> Self {
         Self {
             chunk_size: 30.0,
@@ -52,6 +53,7 @@ impl ExtractComponent for GrassChunks {
     type QueryFilter = ();
     type Out = RenderGrassChunks;
 
+    #[inline]
     fn extract_component(item: QueryItem<'_, '_, Self::QueryData>) -> Option<Self::Out> {
         Some(RenderGrassChunks(item.render.clone()))
     }

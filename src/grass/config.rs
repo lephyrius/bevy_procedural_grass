@@ -13,6 +13,7 @@ pub struct GrassConfig {
 }
 
 impl Default for GrassConfig {
+    #[inline]
     fn default() -> Self {
         Self {
             cull_distance: 200.,
