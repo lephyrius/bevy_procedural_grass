@@ -36,12 +36,12 @@ fn build_indexed_indirect(@builtin(global_invocation_id) id: vec3<u32>) {
         return;
     }
 
-    let meta = chunk_meta[i];
+    let chunk = chunk_meta[i];
     output_commands[i] = DrawIndexedIndirect(
         mesh.index_count,
-        meta.instance_count,
+        chunk.instance_count,
         mesh.first_index,
         mesh.base_vertex,
-        meta.first_instance,
+        chunk.first_instance,
     );
 }

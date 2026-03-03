@@ -8,7 +8,9 @@ use bevy::{
         render_resource::{
             BindGroup, BindGroupEntries, BufferBinding, ComputePassDescriptor,
             ComputePipelineDescriptor, PipelineCache, StorageTextureAccess, TextureFormat,
-            binding_types::{storage_buffer, texture_storage_2d, uniform_buffer},
+            binding_types::{
+                storage_buffer, storage_buffer_read_only, texture_storage_2d, uniform_buffer,
+            },
         },
         renderer::{RenderContext, RenderDevice},
         texture::GpuImage,
@@ -206,7 +208,7 @@ pub fn init_indirect_compute_pipeline(mut commands: Commands, pipeline_cache: Re
         &bevy::render::render_resource::BindGroupLayoutEntries::sequential(
             bevy::render::render_resource::ShaderStages::COMPUTE,
             (
-                storage_buffer::<super::prepare::ChunkIndirectMeta>(true),
+                storage_buffer_read_only::<super::prepare::ChunkIndirectMeta>(false),
                 uniform_buffer::<super::prepare::IndexedIndirectMeshParams>(false),
                 storage_buffer::<super::prepare::DrawIndexedIndirectCommand>(false),
             ),
