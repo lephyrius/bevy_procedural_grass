@@ -14,20 +14,16 @@ documentation = "https://docs.rs/bevy_procedural_grass/latest/bevy_procedural_gr
 [dependencies]
 bevy-inspector-egui = { version = "0.36", optional = true }
 bytemuck = "1.25"
-noise = "0.9"
-rand = "0.10"
+rand = { version = "0.10", default-features = false, features = ["std", "sys_rng"] }
 
 [dependencies.bevy]
 version = "0.18"
 default-features = false
 features = [ "bevy_core_pipeline", "bevy_render", "bevy_pbr" ]
 
-[dependencies.image]
-version = "0.25"
-features = ["png", "jpeg"]
-
 [dev-dependencies]
 bevy = { version = "0.18", default-features = false, features = ["bevy_winit", "tonemapping_luts", "zstd_rust"] }
+noise = "0.9"
 
 [features]
 bevy-inspector-egui = ["dep:bevy-inspector-egui"]
