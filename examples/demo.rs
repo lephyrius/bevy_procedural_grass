@@ -21,6 +21,7 @@ fn main() {
                     compute_update_hz: 30.0,
                     ..default()
                 },
+                ..default()
             },
         ))
         .add_systems(Startup, setup)

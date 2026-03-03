@@ -27,6 +27,7 @@ fn main() {
                     },
                     ..default()
                 },
+                ..default()
             },
             LogDiagnosticsPlugin::default(),
             FrameTimeDiagnosticsPlugin::default(),

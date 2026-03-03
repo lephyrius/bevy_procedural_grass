@@ -56,11 +56,51 @@ fn setup(
 }
 ```
 
+## Performance Presets
+Use a preset to apply coherent tuning for culling/LOD, wind compute rate, and far shading:
+
+```rust
+use bevy::prelude::*;
+use bevy_procedural_grass::prelude::*;
+
+fn main() {
+    App::new()
+        .add_plugins((
+            DefaultPlugins,
+            ProceduralGrassPlugin {
+                performance_preset: Some(GrassPerformancePreset::balanced()),
+                ..default()
+            },
+        ))
+        .run();
+}
+```
+
+Available presets:
+- `GrassPerformancePreset::quality()`
+- `GrassPerformancePreset::balanced()`
+- `GrassPerformancePreset::performance()`
+
+## Tuning Knobs
+Recommended ranges:
+
+- `GrassConfig::cull_distance`: `140.0 ..= 300.0`
+- `GrassConfig::lod_distance`: `40.0 ..= 160.0`
+- `GrassConfig::lod_transition`: `0.0 ..= 100.0`
+- `GrassWind::compute_update_hz`: `20.0 ..= 60.0` (`<= 0.0` means every frame)
+- `Blade::far_lod_start`: `50.0 ..= 120.0`
+- `Blade::far_lod_end`: `90.0 ..= 220.0` (should be `> far_lod_start`)
+
+Notes:
+- If `lod_distance >= cull_distance`, chunks render in high LOD until culled.
+- `lod_transition > 0.0` enables a dithered transition band to avoid visible LOD rings.
+- Wind compute uses a seamless periodic noise field in `wind_compute.wgsl`.
+
 ## Features
 - Grass positions generated from mesh triangles.
 - GPU instancing with frustum/distance culling and LOD.
 - Custom render pipeline compatible with Bevy 0.18 render phases.
-- Compute shader wind map updates each frame (`wind_compute.wgsl`).
+- Compute shader wind map updates (`wind_compute.wgsl`) with optional decimated update rate.
 
 ## Notes
 - The plugin inserts `NoIndirectDrawing` on `Camera3d` entities so custom instanced draws work with the current render command path.

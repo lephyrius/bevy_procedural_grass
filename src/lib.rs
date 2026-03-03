@@ -27,14 +27,16 @@ pub mod grass;
 mod render;
 mod util;
 
+pub use grass::performance::GrassPerformancePreset;
+
 pub mod prelude {
-    pub use crate::ProceduralGrassPlugin;
     pub use crate::grass::{
         config::GrassConfig,
         grass::{Grass, GrassBundle, GrassLODMesh},
         mesh::GrassMesh,
         wind::{GrassWind, Wind},
     };
+    pub use crate::{GrassPerformancePreset, ProceduralGrassPlugin};
 }
 
 pub(crate) const GRASS_SHADER_HANDLE: Handle<Shader> =
@@ -46,6 +48,7 @@ pub(crate) const GRASS_WIND_COMPUTE_SHADER_HANDLE: Handle<Shader> =
 pub struct ProceduralGrassPlugin {
     pub config: GrassConfig,
     pub wind: GrassWind,
+    pub performance_preset: Option<GrassPerformancePreset>,
 }
 
 impl Plugin for ProceduralGrassPlugin {
@@ -72,11 +75,26 @@ impl Plugin for ProceduralGrassPlugin {
 
         app.insert_resource(self.wind.clone())
             .insert_resource(self.config)
-            .add_systems(Startup, grass::wind::create_wind_map)
-            .add_systems(PostStartup, grass::grass::generate_grass)
+            .add_systems(
+                Startup,
+                (
+                    grass::performance::apply_preset_to_resources,
+                    grass::wind::create_wind_map,
+                )
+                    .chain(),
+            )
+            .add_systems(
+                PostStartup,
+                (
+                    grass::performance::apply_preset_to_grass,
+                    grass::grass::generate_grass,
+                )
+                    .chain(),
+            )
             .add_systems(
                 Update,
                 (
+                    grass::performance::apply_preset_to_grass,
                     grass::grass::generate_grass,
                     grass::chunk::grass_culling,
                     grass::wind::update_wind_time_decimated,
@@ -93,6 +111,9 @@ impl Plugin for ProceduralGrassPlugin {
                 ExtractComponentPlugin::<GrassWind>::default(),
                 ExtractResourcePlugin::<GrassWind>::default(),
             ));
+        if let Some(preset) = self.performance_preset {
+            app.insert_resource(preset);
+        }
 
         let Some(render_app) = app.get_sub_app_mut(RenderApp) else {
             return;
