@@ -17,6 +17,7 @@ use grass::{
     wind::GrassWind,
 };
 use render::{
+    GrassIndirectSettings,
     compute::{GrassWindComputeLabel, GrassWindComputeNode},
     draw::DrawGrass,
     instance::{GrassChunkBuffer, GrassChunkData},
@@ -44,11 +45,23 @@ pub(crate) const GRASS_SHADER_HANDLE: Handle<Shader> =
 pub(crate) const GRASS_WIND_COMPUTE_SHADER_HANDLE: Handle<Shader> =
     uuid_handle!("9ced8fce-d838-457a-a5d9-3ce7d5b6d557");
 
-#[derive(Default, Clone)]
+#[derive(Clone)]
 pub struct ProceduralGrassPlugin {
     pub config: GrassConfig,
     pub wind: GrassWind,
     pub performance_preset: Option<GrassPerformancePreset>,
+    pub indirect_draws: bool,
+}
+
+impl Default for ProceduralGrassPlugin {
+    fn default() -> Self {
+        Self {
+            config: GrassConfig::default(),
+            wind: GrassWind::default(),
+            performance_preset: None,
+            indirect_draws: true,
+        }
+    }
 }
 
 impl Plugin for ProceduralGrassPlugin {
@@ -73,8 +86,13 @@ impl Plugin for ProceduralGrassPlugin {
                 .register_type::<GrassConfig>();
         }
 
+        let indirect_settings = GrassIndirectSettings {
+            enabled: self.indirect_draws,
+        };
+
         app.insert_resource(self.wind.clone())
             .insert_resource(self.config)
+            .insert_resource(indirect_settings)
             .add_systems(
                 Startup,
                 (
@@ -128,6 +146,8 @@ impl Plugin for ProceduralGrassPlugin {
                 (
                     render::queue::grass_queue.in_set(RenderSystems::QueueMeshes),
                     render::prepare::prepare_grass_buffers.in_set(RenderSystems::PrepareResources),
+                    render::prepare::prepare_indirect_buffers
+                        .in_set(RenderSystems::PrepareResources),
                     render::prepare::prepare_global_wind_buffers
                         .in_set(RenderSystems::PrepareResources),
                     render::prepare::prepare_local_wind_buffers
@@ -141,7 +161,8 @@ impl Plugin for ProceduralGrassPlugin {
                     render::compute::prepare_wind_compute_bind_group
                         .in_set(RenderSystems::PrepareBindGroups),
                 ),
-            );
+            )
+            .insert_resource(indirect_settings);
 
         let mut render_graph = render_app.world_mut().resource_mut::<RenderGraph>();
         render_graph.add_node(GrassWindComputeLabel, GrassWindComputeNode);
@@ -157,9 +178,17 @@ impl Plugin for ProceduralGrassPlugin {
 
 fn ensure_no_indirect_drawing(
     mut commands: Commands,
-    cameras: Query<Entity, (With<Camera3d>, Without<NoIndirectDrawing>)>,
+    indirect_settings: Res<GrassIndirectSettings>,
+    cameras_without_flag: Query<Entity, (With<Camera3d>, Without<NoIndirectDrawing>)>,
+    cameras_with_flag: Query<Entity, (With<Camera3d>, With<NoIndirectDrawing>)>,
 ) {
-    for entity in &cameras {
-        commands.entity(entity).insert(NoIndirectDrawing);
+    if indirect_settings.enabled {
+        for entity in &cameras_with_flag {
+            commands.entity(entity).remove::<NoIndirectDrawing>();
+        }
+    } else {
+        for entity in &cameras_without_flag {
+            commands.entity(entity).insert(NoIndirectDrawing);
+        }
     }
 }

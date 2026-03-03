@@ -19,7 +19,11 @@ use crate::grass::{
     wind::GrassWind,
 };
 
-use super::{instance::GrassChunkBuffer, prepare::BufferBindGroup};
+use super::{
+    GrassIndirectSettings,
+    instance::GrassChunkBuffer,
+    prepare::{BufferBindGroup, GrassIndirectBuffers},
+};
 
 pub type DrawGrass = (
     SetItemPipeline,
@@ -82,23 +86,32 @@ impl<P: PhaseItem> RenderCommand<P> for DrawGrassInstanced {
         SRes<RenderMeshInstances>,
         SRes<MeshAllocator>,
         SRes<RenderAssets<GrassChunkBuffer>>,
+        SRes<GrassIndirectSettings>,
     );
     type ViewQuery = ();
-    type ItemQuery = (Option<Read<GrassLODMesh>>, Read<RenderGrassChunks>);
+    type ItemQuery = (
+        Option<Read<GrassLODMesh>>,
+        Read<RenderGrassChunks>,
+        Option<Read<GrassIndirectBuffers>>,
+    );
 
     #[inline]
     fn render<'w>(
         item: &P,
         _view: (),
-        item_data: Option<(Option<&'w GrassLODMesh>, &'w RenderGrassChunks)>,
-        (meshes, render_mesh_instances, mesh_allocator, grass_data): SystemParamItem<
+        item_data: Option<(
+            Option<&'w GrassLODMesh>,
+            &'w RenderGrassChunks,
+            Option<&'w GrassIndirectBuffers>,
+        )>,
+        (meshes, render_mesh_instances, mesh_allocator, grass_data, indirect_settings): SystemParamItem<
             'w,
             '_,
             Self::Param,
         >,
         pass: &mut TrackedRenderPass<'w>,
     ) -> RenderCommandResult {
-        let Some((lod, chunks)) = item_data else {
+        let Some((lod, chunks, indirect_buffers)) = item_data else {
             return RenderCommandResult::Skip;
         };
 
@@ -110,6 +123,7 @@ impl<P: PhaseItem> RenderCommand<P> for DrawGrassInstanced {
         let meshes = meshes.into_inner();
         let grass_data = grass_data.into_inner();
         let mesh_allocator = mesh_allocator.into_inner();
+        let indirect_enabled = indirect_settings.into_inner().enabled;
 
         let high_mesh_id = mesh_instance.mesh_asset_id;
         let has_high = chunks
@@ -145,6 +159,96 @@ impl<P: PhaseItem> RenderCommand<P> for DrawGrassInstanced {
         } else {
             None
         };
+
+        if indirect_enabled {
+            if let Some(indirect) = indirect_buffers {
+                let mut used_indirect = false;
+
+                if let Some((gpu_mesh, vertex_slice, index_slice)) = high_resources.as_ref() {
+                    if let (Some(instance_buffer), Some(indirect_buffer)) = (
+                        indirect.high_instance_buffer.as_ref(),
+                        indirect.high_indirect_buffer.as_ref(),
+                    ) {
+                        if indirect.high_draw_count > 0 {
+                            pass.set_vertex_buffer(0, vertex_slice.buffer.slice(..));
+                            pass.set_vertex_buffer(1, instance_buffer.slice(..));
+                            match &gpu_mesh.buffer_info {
+                                RenderMeshBufferInfo::Indexed { index_format, .. }
+                                    if indirect.high_indexed =>
+                                {
+                                    let Some(index_slice) = index_slice else {
+                                        return RenderCommandResult::Skip;
+                                    };
+                                    pass.set_index_buffer(
+                                        index_slice.buffer.slice(..),
+                                        *index_format,
+                                    );
+                                    pass.multi_draw_indexed_indirect(
+                                        indirect_buffer,
+                                        0,
+                                        indirect.high_draw_count,
+                                    );
+                                    used_indirect = true;
+                                }
+                                RenderMeshBufferInfo::NonIndexed if !indirect.high_indexed => {
+                                    pass.multi_draw_indirect(
+                                        indirect_buffer,
+                                        0,
+                                        indirect.high_draw_count,
+                                    );
+                                    used_indirect = true;
+                                }
+                                _ => {}
+                            }
+                        }
+                    }
+                }
+
+                if let Some((gpu_mesh, vertex_slice, index_slice)) = low_resources.as_ref() {
+                    if let (Some(instance_buffer), Some(indirect_buffer)) = (
+                        indirect.low_instance_buffer.as_ref(),
+                        indirect.low_indirect_buffer.as_ref(),
+                    ) {
+                        if indirect.low_draw_count > 0 {
+                            pass.set_vertex_buffer(0, vertex_slice.buffer.slice(..));
+                            pass.set_vertex_buffer(1, instance_buffer.slice(..));
+                            match &gpu_mesh.buffer_info {
+                                RenderMeshBufferInfo::Indexed { index_format, .. }
+                                    if indirect.low_indexed =>
+                                {
+                                    let Some(index_slice) = index_slice else {
+                                        return RenderCommandResult::Skip;
+                                    };
+                                    pass.set_index_buffer(
+                                        index_slice.buffer.slice(..),
+                                        *index_format,
+                                    );
+                                    pass.multi_draw_indexed_indirect(
+                                        indirect_buffer,
+                                        0,
+                                        indirect.low_draw_count,
+                                    );
+                                    used_indirect = true;
+                                }
+                                RenderMeshBufferInfo::NonIndexed if !indirect.low_indexed => {
+                                    pass.multi_draw_indirect(
+                                        indirect_buffer,
+                                        0,
+                                        indirect.low_draw_count,
+                                    );
+                                    used_indirect = true;
+                                }
+                                _ => {}
+                            }
+                        }
+                    }
+                }
+
+                if used_indirect {
+                    return RenderCommandResult::Success;
+                }
+            }
+        }
 
         let mut bound_lod: Option<GrassLOD> = None;
 

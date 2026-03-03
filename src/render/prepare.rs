@@ -1,24 +1,33 @@
-use std::marker::PhantomData;
+use std::{
+    hash::{Hash, Hasher},
+    marker::PhantomData,
+};
 
 use bevy::{
+    pbr::RenderMeshInstances,
     prelude::*,
     render::{
+        mesh::{RenderMesh, RenderMeshBufferInfo, allocator::MeshAllocator},
         render_asset::RenderAssets,
         render_resource::{
             BindGroup, BindGroupEntries, BindingResource, Buffer, BufferBinding,
-            BufferInitDescriptor, BufferUsages, PipelineCache,
+            BufferInitDescriptor, BufferUsages, PipelineCache, WgpuFeatures,
         },
         renderer::{RenderDevice, RenderQueue},
+        sync_world::MainEntity,
         texture::{FallbackImage, GpuImage},
     },
 };
+use bytemuck::{Pod, Zeroable};
 
 use crate::grass::{
+    chunk::{GrassLOD, RenderGrassChunks},
+    grass::GrassLODMesh,
     grass::{Blade, Grass, GrassColor},
     wind::{GrassWind, Wind},
 };
 
-use super::pipeline::GrassPipeline;
+use super::{GrassIndirectSettings, instance::GrassChunkBuffer, pipeline::GrassPipeline};
 
 #[derive(Component, Resource, Clone)]
 pub struct BufferBindGroup<T> {
@@ -45,6 +54,310 @@ pub struct GrassBuffer {
 pub struct PreparedGrassUniforms {
     pub color: [[f32; 4]; 3],
     pub blade: Blade,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Pod, Zeroable)]
+pub struct DrawIndirectCommand {
+    pub vertex_count: u32,
+    pub instance_count: u32,
+    pub first_vertex: u32,
+    pub first_instance: u32,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Pod, Zeroable)]
+pub struct DrawIndexedIndirectCommand {
+    pub index_count: u32,
+    pub instance_count: u32,
+    pub first_index: u32,
+    pub base_vertex: i32,
+    pub first_instance: u32,
+}
+
+#[derive(Component, Clone)]
+pub struct GrassIndirectBuffers {
+    pub high_instance_buffer: Option<Buffer>,
+    pub low_instance_buffer: Option<Buffer>,
+    pub high_indirect_buffer: Option<Buffer>,
+    pub low_indirect_buffer: Option<Buffer>,
+    pub high_draw_count: u32,
+    pub low_draw_count: u32,
+    pub high_indexed: bool,
+    pub low_indexed: bool,
+    pub signature: u64,
+}
+
+#[derive(Clone, Copy)]
+struct LodMeshInfo {
+    indexed: bool,
+    index_count: u32,
+    first_index: u32,
+    base_vertex: i32,
+    vertex_count: u32,
+    first_vertex: u32,
+}
+
+fn create_buffer_from_pod<T: Pod>(
+    render_device: &RenderDevice,
+    label: &'static str,
+    usage: BufferUsages,
+    data: &[T],
+) -> Option<Buffer> {
+    if data.is_empty() {
+        None
+    } else {
+        Some(
+            render_device.create_buffer_with_data(&BufferInitDescriptor {
+                label: Some(label),
+                contents: bytemuck::cast_slice(data),
+                usage,
+            }),
+        )
+    }
+}
+
+fn create_lod_draw_commands(
+    chunks: &RenderGrassChunks,
+    lod_kind: GrassLOD,
+    mesh_info: LodMeshInfo,
+    grass_data: &RenderAssets<GrassChunkBuffer>,
+) -> (
+    Vec<super::instance::GrassData>,
+    Vec<DrawIndirectCommand>,
+    Vec<DrawIndexedIndirectCommand>,
+) {
+    let mut instances = Vec::new();
+    let mut direct_cmds = Vec::new();
+    let mut indexed_cmds = Vec::new();
+    let mut first_instance = 0u32;
+
+    for (chunk_lod, handle) in &chunks.0 {
+        if *chunk_lod != lod_kind {
+            continue;
+        }
+        let Some(chunk) = grass_data.get(handle.id()) else {
+            continue;
+        };
+        let instance_count = chunk.length as u32;
+        if instance_count == 0 {
+            continue;
+        }
+
+        if mesh_info.indexed {
+            indexed_cmds.push(DrawIndexedIndirectCommand {
+                index_count: mesh_info.index_count,
+                instance_count,
+                first_index: mesh_info.first_index,
+                base_vertex: mesh_info.base_vertex,
+                first_instance,
+            });
+        } else {
+            direct_cmds.push(DrawIndirectCommand {
+                vertex_count: mesh_info.vertex_count,
+                instance_count,
+                first_vertex: mesh_info.first_vertex,
+                first_instance,
+            });
+        }
+
+        instances.extend_from_slice(&chunk.cpu_data);
+        first_instance += instance_count;
+    }
+
+    (instances, direct_cmds, indexed_cmds)
+}
+
+pub(crate) fn prepare_indirect_buffers(
+    mut commands: Commands,
+    indirect_settings: Res<GrassIndirectSettings>,
+    render_device: Res<RenderDevice>,
+    render_mesh_instances: Res<RenderMeshInstances>,
+    mesh_allocator: Res<MeshAllocator>,
+    meshes: Res<RenderAssets<RenderMesh>>,
+    grass_data: Res<RenderAssets<GrassChunkBuffer>>,
+    query: Query<(
+        Entity,
+        &MainEntity,
+        &RenderGrassChunks,
+        Option<&GrassLODMesh>,
+        Option<&GrassIndirectBuffers>,
+    )>,
+) {
+    if !indirect_settings.enabled {
+        for (entity, _, _, _, state) in &query {
+            if state.is_some() {
+                commands.entity(entity).remove::<GrassIndirectBuffers>();
+            }
+        }
+        return;
+    }
+
+    let features = render_device.features();
+    let required = WgpuFeatures::INDIRECT_FIRST_INSTANCE;
+    if !features.contains(required) {
+        for (entity, _, _, _, state) in &query {
+            if state.is_some() {
+                commands.entity(entity).remove::<GrassIndirectBuffers>();
+            }
+        }
+        return;
+    }
+
+    for (entity, main_entity, chunks, lod_mesh, state) in &query {
+        if chunks.0.is_empty() {
+            if state.is_some() {
+                commands.entity(entity).remove::<GrassIndirectBuffers>();
+            }
+            continue;
+        }
+
+        let Some(mesh_instance) = render_mesh_instances.render_mesh_queue_data(*main_entity) else {
+            continue;
+        };
+        let Some(high_mesh) = meshes.get(mesh_instance.mesh_asset_id) else {
+            continue;
+        };
+        let Some(high_vertex_slice) =
+            mesh_allocator.mesh_vertex_slice(&mesh_instance.mesh_asset_id)
+        else {
+            continue;
+        };
+        let high_index_slice = mesh_allocator.mesh_index_slice(&mesh_instance.mesh_asset_id);
+
+        let high_info = match &high_mesh.buffer_info {
+            RenderMeshBufferInfo::Indexed { count, .. } => {
+                let Some(index_slice) = high_index_slice else {
+                    continue;
+                };
+                LodMeshInfo {
+                    indexed: true,
+                    index_count: *count,
+                    first_index: index_slice.range.start,
+                    base_vertex: high_vertex_slice.range.start as i32,
+                    vertex_count: 0,
+                    first_vertex: 0,
+                }
+            }
+            RenderMeshBufferInfo::NonIndexed => LodMeshInfo {
+                indexed: false,
+                index_count: 0,
+                first_index: 0,
+                base_vertex: 0,
+                vertex_count: (high_vertex_slice.range.end - high_vertex_slice.range.start) as u32,
+                first_vertex: high_vertex_slice.range.start as u32,
+            },
+        };
+
+        let low_info = lod_mesh
+            .and_then(|lod| lod.mesh_handle.as_ref().map(|handle| handle.id()))
+            .and_then(|mesh_id| {
+                let low_mesh = meshes.get(mesh_id)?;
+                let low_vertex_slice = mesh_allocator.mesh_vertex_slice(&mesh_id)?;
+                let low_index_slice = mesh_allocator.mesh_index_slice(&mesh_id);
+
+                Some(match &low_mesh.buffer_info {
+                    RenderMeshBufferInfo::Indexed { count, .. } => {
+                        let index_slice = low_index_slice?;
+                        LodMeshInfo {
+                            indexed: true,
+                            index_count: *count,
+                            first_index: index_slice.range.start,
+                            base_vertex: low_vertex_slice.range.start as i32,
+                            vertex_count: 0,
+                            first_vertex: 0,
+                        }
+                    }
+                    RenderMeshBufferInfo::NonIndexed => LodMeshInfo {
+                        indexed: false,
+                        index_count: 0,
+                        first_index: 0,
+                        base_vertex: 0,
+                        vertex_count: (low_vertex_slice.range.end - low_vertex_slice.range.start)
+                            as u32,
+                        first_vertex: low_vertex_slice.range.start as u32,
+                    },
+                })
+            });
+
+        let mut hasher = std::collections::hash_map::DefaultHasher::new();
+        chunks.0.hash(&mut hasher);
+        mesh_instance.mesh_asset_id.hash(&mut hasher);
+        low_info.is_some().hash(&mut hasher);
+        let signature = hasher.finish();
+
+        if state.is_some_and(|state| state.signature == signature) {
+            continue;
+        }
+
+        let (high_instances, high_direct_cmds, high_indexed_cmds) =
+            create_lod_draw_commands(chunks, GrassLOD::High, high_info, grass_data.as_ref());
+
+        let (low_instances, low_direct_cmds, low_indexed_cmds) = if let Some(low_info) = low_info {
+            create_lod_draw_commands(chunks, GrassLOD::Low, low_info, grass_data.as_ref())
+        } else {
+            (Vec::new(), Vec::new(), Vec::new())
+        };
+
+        let high_instance_buffer = create_buffer_from_pod(
+            &render_device,
+            "grass indirect high instance buffer",
+            BufferUsages::VERTEX | BufferUsages::COPY_DST,
+            &high_instances,
+        );
+        let low_instance_buffer = create_buffer_from_pod(
+            &render_device,
+            "grass indirect low instance buffer",
+            BufferUsages::VERTEX | BufferUsages::COPY_DST,
+            &low_instances,
+        );
+
+        let high_indexed = !high_indexed_cmds.is_empty();
+        let low_indexed = !low_indexed_cmds.is_empty();
+
+        let high_indirect_buffer = if high_indexed {
+            create_buffer_from_pod(
+                &render_device,
+                "grass indirect high draw buffer",
+                BufferUsages::INDIRECT | BufferUsages::COPY_DST,
+                &high_indexed_cmds,
+            )
+        } else {
+            create_buffer_from_pod(
+                &render_device,
+                "grass indirect high draw buffer",
+                BufferUsages::INDIRECT | BufferUsages::COPY_DST,
+                &high_direct_cmds,
+            )
+        };
+        let low_indirect_buffer = if low_indexed {
+            create_buffer_from_pod(
+                &render_device,
+                "grass indirect low draw buffer",
+                BufferUsages::INDIRECT | BufferUsages::COPY_DST,
+                &low_indexed_cmds,
+            )
+        } else {
+            create_buffer_from_pod(
+                &render_device,
+                "grass indirect low draw buffer",
+                BufferUsages::INDIRECT | BufferUsages::COPY_DST,
+                &low_direct_cmds,
+            )
+        };
+
+        commands.entity(entity).insert(GrassIndirectBuffers {
+            high_instance_buffer,
+            low_instance_buffer,
+            high_indirect_buffer,
+            low_indirect_buffer,
+            high_draw_count: (high_indexed_cmds.len() + high_direct_cmds.len()) as u32,
+            low_draw_count: (low_indexed_cmds.len() + low_direct_cmds.len()) as u32,
+            high_indexed,
+            low_indexed,
+            signature,
+        });
+    }
 }
 
 pub(crate) fn prepare_grass_buffers(

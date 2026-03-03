@@ -56,6 +56,7 @@ pub struct GrassChunkData(pub Vec<GrassData>);
 pub struct GrassChunkBuffer {
     pub buffer: Buffer,
     pub length: usize,
+    pub cpu_data: Vec<GrassData>,
 }
 
 impl RenderAsset for GrassChunkBuffer {
@@ -77,6 +78,7 @@ impl RenderAsset for GrassChunkBuffer {
         Ok(Self {
             buffer,
             length: source_asset.len(),
+            cpu_data: source_asset.0,
         })
     }
 }
