@@ -27,7 +27,12 @@ use crate::grass::{
     wind::{GrassWind, Wind},
 };
 
-use super::{GrassIndirectSettings, instance::GrassChunkBuffer, pipeline::GrassPipeline};
+use super::{
+    GrassIndirectSettings,
+    deferred_lighting::{GRASS_DEFERRED_LIGHTING_PASS_ID, GrassDeferredLightingSettings},
+    instance::GrassChunkBuffer,
+    pipeline::GrassPipeline,
+};
 
 #[derive(Component, Resource, Clone)]
 pub struct BufferBindGroup<T> {
@@ -49,12 +54,21 @@ impl<T> BufferBindGroup<T> {
 pub struct GrassBuffer {
     pub color_buffer: Buffer,
     pub blade_buffer: Buffer,
+    pub deferred_pass_id_buffer: Buffer,
 }
 
 #[derive(Component, Clone)]
 pub struct PreparedGrassUniforms {
     pub color: [[f32; 4]; 3],
     pub blade: Blade,
+    pub deferred_lighting_pass_id: u32,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Pod, Zeroable, ShaderType)]
+pub struct GrassDeferredPassIdUniform {
+    pub deferred_lighting_pass_id: u32,
+    pub _padding: [u32; 3],
 }
 
 #[repr(C)]
@@ -392,12 +406,18 @@ pub(crate) fn prepare_grass_buffers(
     )>,
     render_device: Res<RenderDevice>,
     render_queue: Res<RenderQueue>,
+    deferred_lighting_settings: Option<Res<GrassDeferredLightingSettings>>,
 ) {
+    let deferred_lighting_pass_id = deferred_lighting_settings
+        .map_or(GRASS_DEFERRED_LIGHTING_PASS_ID, |settings| settings.pass_id)
+        as u32;
     for (entity, color, blade, grass_buffer, prepared_uniforms) in &query {
         let color_array = color.to_array();
-        if prepared_uniforms
-            .is_some_and(|prepared| prepared.color == color_array && prepared.blade == *blade)
-        {
+        if prepared_uniforms.is_some_and(|prepared| {
+            prepared.color == color_array
+                && prepared.blade == *blade
+                && prepared.deferred_lighting_pass_id == deferred_lighting_pass_id
+        }) {
             continue;
         }
 
@@ -412,9 +432,18 @@ pub(crate) fn prepare_grass_buffers(
                 0,
                 bytemuck::cast_slice(&[*blade]),
             );
+            render_queue.write_buffer(
+                &grass_buffer.deferred_pass_id_buffer,
+                0,
+                bytemuck::bytes_of(&GrassDeferredPassIdUniform {
+                    deferred_lighting_pass_id,
+                    _padding: [0; 3],
+                }),
+            );
             commands.entity(entity).insert(PreparedGrassUniforms {
                 color: color_array,
                 blade: *blade,
+                deferred_lighting_pass_id,
             });
             continue;
         }
@@ -429,16 +458,27 @@ pub(crate) fn prepare_grass_buffers(
             contents: bytemuck::cast_slice(&[*blade]),
             usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
         });
+        let deferred_pass_id_buffer =
+            render_device.create_buffer_with_data(&BufferInitDescriptor {
+                label: Some("grass deferred pass id buffer"),
+                contents: bytemuck::bytes_of(&GrassDeferredPassIdUniform {
+                    deferred_lighting_pass_id,
+                    _padding: [0; 3],
+                }),
+                usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
+            });
 
         commands
             .entity(entity)
             .insert(GrassBuffer {
                 color_buffer,
                 blade_buffer,
+                deferred_pass_id_buffer,
             })
             .insert(PreparedGrassUniforms {
                 color: color_array,
                 blade: *blade,
+                deferred_lighting_pass_id,
             });
     }
 }
@@ -468,6 +508,11 @@ pub(crate) fn prepare_grass_bind_group(
                 },
                 BufferBinding {
                     buffer: &grass.blade_buffer,
+                    offset: 0,
+                    size: None,
+                },
+                BufferBinding {
+                    buffer: &grass.deferred_pass_id_buffer,
                     offset: 0,
                     size: None,
                 },

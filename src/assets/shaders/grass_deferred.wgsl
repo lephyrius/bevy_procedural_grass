@@ -41,6 +41,12 @@ struct Blade {
 @group(3) @binding(1)
 var<uniform> blade: Blade;
 
+struct DeferredPassId {
+    data: vec4<u32>,
+};
+@group(3) @binding(2)
+var<uniform> deferred_pass_id: DeferredPassId;
+
 struct Wind {
     speed: f32,
     amplitude: f32,
@@ -62,6 +68,7 @@ struct VertexOutput {
     @location(1) normal: vec3<f32>,
     @location(2) bezier_tangent: vec3<f32>,
     @location(5) world_normal: vec3<f32>,
+    @location(6) material_variation: f32,
 #ifdef MOTION_VECTOR_PREPASS
     @location(3) world_position: vec3<f32>,
     @location(4) previous_world_position: vec3<f32>,
@@ -188,6 +195,8 @@ fn vertex(vertex: Vertex) -> VertexOutput {
     out.uv = uv;
     out.bezier_tangent = tangent;
     out.world_normal = i_normal;
+    out.material_variation =
+        random1D(vertex.i_pos.x * 17.0 + vertex.i_pos.y * 59.0 + vertex.i_pos.z * 131.0 + 7.0);
 #ifdef MOTION_VECTOR_PREPASS
     out.world_position = position;
     out.previous_world_position = prev_position;
@@ -227,26 +236,33 @@ fn fragment(
 
 #ifdef DEFERRED_PREPASS
     let base_color = (mix(color.color_1, color.color_2, in.uv.y)).rgb;
+    let color_variation_hash = random1D(in.material_variation * 29.0 + 3.0);
+    let roughness_variation_hash = random1D(in.material_variation * 53.0 + 11.0);
+    let transmission_variation_hash = random1D(in.material_variation * 97.0 + 17.0);
+    let color_multiplier = mix(0.9, 1.1, color_variation_hash);
+    let varied_base_color = clamp(base_color * color_multiplier, vec3<f32>(0.0), vec3<f32>(1.0));
     let ao = (mix(color.ao, vec4<f32>(1.0, 1.0, 1.0, 1.0), in.uv.y)).rgb;
-    let roughness = clamp(1.0 - blade.specular * 8.0, 0.15, 0.95);
+    let base_roughness = clamp(1.0 - blade.specular * 8.0, 0.15, 0.95);
+    let roughness = clamp(base_roughness + mix(-0.07, 0.08, roughness_variation_hash), 0.12, 0.98);
+    let transmission_strength = mix(0.85, 1.2, transmission_variation_hash);
 
     // Deferred G-buffer material payload consumed by Bevy deferred lighting.
     var pbr = pbr_types::pbr_input_new();
     pbr.world_normal = shadow_normal;
     pbr.N = shading_normal;
     pbr.diffuse_occlusion = ao;
-    pbr.material.base_color = vec4<f32>(base_color, 1.0);
+    pbr.material.base_color = vec4<f32>(varied_base_color, 1.0);
     pbr.material.perceptual_roughness = roughness;
     pbr.material.metallic = 0.0;
     pbr.material.reflectance = vec3<f32>(0.5);
-    pbr.material.diffuse_transmission = clamp((1.0 - in.uv.y) * 0.35, 0.0, 0.35);
-    pbr.material.specular_transmission = 0.05;
+    pbr.material.diffuse_transmission = clamp((1.0 - in.uv.y) * 0.35 * transmission_strength, 0.0, 0.45);
+    pbr.material.specular_transmission = clamp(0.05 * mix(0.7, 1.25, transmission_variation_hash), 0.01, 0.1);
     pbr.material.thickness = mix(0.05, 0.2, 1.0 - in.uv.y);
-    pbr.material.attenuation_color = vec4<f32>(base_color, 1.0);
-    pbr.material.attenuation_distance = 0.5;
+    pbr.material.attenuation_color = vec4<f32>(varied_base_color, 1.0);
+    pbr.material.attenuation_distance = mix(0.4, 0.75, transmission_variation_hash);
 
     out.deferred = deferred_gbuffer_from_pbr_input(pbr);
-    out.deferred_lighting_pass_id = 1u;
+    out.deferred_lighting_pass_id = deferred_pass_id.data.x;
 #endif
 
     return out;

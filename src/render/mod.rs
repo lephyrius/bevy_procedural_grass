@@ -3,6 +3,8 @@ use bevy::prelude::*;
 #[cfg(feature = "forward")]
 pub mod compute;
 #[cfg(feature = "forward")]
+pub mod deferred_lighting;
+#[cfg(feature = "forward")]
 pub mod draw;
 #[cfg(feature = "forward")]
 pub mod pipeline;

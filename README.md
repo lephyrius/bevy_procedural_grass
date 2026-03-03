@@ -74,7 +74,20 @@ Deferred variants of the examples are available:
 Deferred mode notes:
 - Add `DepthPrepass`, `NormalPrepass`, and `DeferredPrepass` to your `Camera3d`.
 - The deferred grass path currently uses direct instanced draws for stability.
+- Grass uses a dedicated deferred lighting pass (default pass ID `2`).
+- Override pass ID via `ProceduralGrassPlugin { deferred_lighting_pass_id: ..., ..default() }` or `ProceduralGrassPlugin::default().with_deferred_lighting_pass_id(...)`.
 - For maximum throughput today, prefer the default forward path with indirect draws enabled.
+
+## Deferred Troubleshooting
+- Symptom: mostly gray/flat output in deferred mode.
+  Cause: deferred lighting pass ordering or pass-id mismatch.
+  Fix: ensure your camera has `DeferredPrepass`, `DepthPrepass`, and `NormalPrepass`; keep grass pass ID consistent between g-buffer output and deferred lighting selection.
+- Symptom: no grass in deferred example.
+  Cause: deferred pipeline still compiling or shader import not ready.
+  Fix: wait for pipeline cache to settle and check logs for shader parse/validation errors.
+- Symptom: fallback pass-id warning appears.
+  Cause: extracted camera pass-id binding was unavailable for that frame.
+  Fix: verify extraction is active; set `GRASS_DEBUG=1` only when diagnosing this path.
 
 ## Performance Presets
 Use a preset to apply coherent tuning for culling/LOD, wind compute rate, and far shading:

@@ -1,6 +1,8 @@
 #[cfg(feature = "forward")]
 use bevy::asset::{load_internal_asset, uuid_handle};
 #[cfg(feature = "forward")]
+use bevy::render::extract_component::UniformComponentPlugin;
+#[cfg(feature = "forward")]
 use bevy::{
     core_pipeline::{core_3d::Opaque3d, deferred::Opaque3dDeferred},
     render::Render,
@@ -32,6 +34,7 @@ use render::instance::{GrassChunkBuffer, GrassChunkData};
 use render::{
     GrassIndirectSettings,
     compute::{GrassWindComputeLabel, GrassWindComputeNode},
+    deferred_lighting::GrassDeferredLightingPassId,
     draw::{DrawGrass, DrawGrassDeferred},
     pipeline::{GrassDeferredPipeline, GrassPipeline},
 };
@@ -41,8 +44,16 @@ mod render;
 mod util;
 
 pub use grass::performance::GrassPerformancePreset;
+#[cfg(feature = "forward")]
+pub use render::deferred_lighting::{
+    GRASS_DEFERRED_LIGHTING_PASS_ID, GrassDeferredLightingSettings,
+};
 
 pub mod prelude {
+    #[cfg(feature = "forward")]
+    pub use crate::GRASS_DEFERRED_LIGHTING_PASS_ID;
+    #[cfg(feature = "forward")]
+    pub use crate::GrassDeferredLightingSettings;
     pub use crate::grass::{
         config::GrassConfig,
         grass::{Grass, GrassBundle, GrassLODMesh},
@@ -71,6 +82,7 @@ pub struct ProceduralGrassPlugin {
     pub wind: GrassWind,
     pub performance_preset: Option<GrassPerformancePreset>,
     pub indirect_draws: bool,
+    pub deferred_lighting_pass_id: u8,
 }
 
 impl Default for ProceduralGrassPlugin {
@@ -81,7 +93,16 @@ impl Default for ProceduralGrassPlugin {
             wind: GrassWind::default(),
             performance_preset: None,
             indirect_draws: true,
+            deferred_lighting_pass_id: 2,
         }
+    }
+}
+
+impl ProceduralGrassPlugin {
+    #[inline]
+    pub fn with_deferred_lighting_pass_id(mut self, pass_id: u8) -> Self {
+        self.deferred_lighting_pass_id = pass_id.max(1);
+        self
     }
 }
 
@@ -126,6 +147,11 @@ impl Plugin for ProceduralGrassPlugin {
         let indirect_settings = GrassIndirectSettings {
             enabled: self.indirect_draws,
         };
+        #[cfg(feature = "forward")]
+        let deferred_lighting_settings = render::deferred_lighting::GrassDeferredLightingSettings {
+            // 0 would collide with the depth clear value in the deferred-id texture.
+            pass_id: self.deferred_lighting_pass_id.max(1),
+        };
 
         app.insert_resource(self.wind.clone())
             .insert_resource(self.config)
@@ -165,6 +191,20 @@ impl Plugin for ProceduralGrassPlugin {
                 ExtractResourcePlugin::<GrassWind>::default(),
             ));
         #[cfg(feature = "forward")]
+        app.insert_resource(deferred_lighting_settings)
+            .add_plugins(ExtractResourcePlugin::<
+                render::deferred_lighting::GrassDeferredLightingSettings,
+            >::default());
+        #[cfg(feature = "forward")]
+        app.add_plugins((
+            ExtractComponentPlugin::<GrassDeferredLightingPassId>::default(),
+            UniformComponentPlugin::<GrassDeferredLightingPassId>::default(),
+        ))
+        .add_systems(
+            PostUpdate,
+            render::deferred_lighting::insert_grass_deferred_lighting_pass_id_component,
+        );
+        #[cfg(feature = "forward")]
         {
             app.insert_resource(indirect_settings);
             app.add_systems(Update, ensure_no_indirect_drawing);
@@ -188,6 +228,7 @@ impl Plugin for ProceduralGrassPlugin {
                 .add_systems(
                     RenderStartup,
                     (
+                        render::deferred_lighting::init_grass_deferred_lighting_fallback_buffer,
                         render::compute::init_wind_compute_pipeline,
                         render::compute::init_indirect_compute_pipeline,
                     ),
@@ -232,6 +273,8 @@ impl Plugin for ProceduralGrassPlugin {
                 render::compute::GrassIndirectComputeLabel,
                 CameraDriverLabel,
             );
+            drop(render_graph);
+            render::deferred_lighting::add_grass_deferred_lighting_pass_node(render_app);
         }
     }
 
