@@ -151,6 +151,9 @@ pub struct WindBuffer {
     pub buffer: Buffer,
 }
 
+#[derive(Resource, Clone, Copy)]
+pub struct PreparedGlobalWindData(pub Wind);
+
 #[derive(Component, Clone)]
 pub struct LocalWindBindGroupState {
     pub wind_map: Handle<Image>,
@@ -166,13 +169,19 @@ pub(crate) fn prepare_global_wind_buffers(
     render_queue: Res<RenderQueue>,
     wind: Res<GrassWind>,
     wind_buffer: Option<Res<WindBuffer>>,
+    prepared_global_wind: Option<Res<PreparedGlobalWindData>>,
 ) {
+    if prepared_global_wind.is_some_and(|prepared| prepared.0 == wind.wind_data) {
+        return;
+    }
+
     if let Some(wind_buffer) = wind_buffer {
         render_queue.write_buffer(
             &wind_buffer.buffer,
             0,
             bytemuck::cast_slice(&[wind.wind_data]),
         );
+        commands.insert_resource(PreparedGlobalWindData(wind.wind_data));
         return;
     }
 
@@ -183,6 +192,7 @@ pub(crate) fn prepare_global_wind_buffers(
     });
 
     commands.insert_resource(WindBuffer { buffer });
+    commands.insert_resource(PreparedGlobalWindData(wind.wind_data));
 }
 
 pub(crate) fn prepare_global_wind_bind_group(

@@ -34,6 +34,9 @@ pub struct GrassWindComputeBindGroup {
     pub texture_size: UVec2,
 }
 
+#[derive(Resource, Default)]
+pub struct GrassWindComputeDispatch(pub bool);
+
 #[derive(Debug, Hash, PartialEq, Eq, Clone, RenderLabel)]
 pub struct GrassWindComputeLabel;
 
@@ -61,6 +64,7 @@ pub fn init_wind_compute_pipeline(mut commands: Commands, pipeline_cache: Res<Pi
         bind_group_layout,
         pipeline,
     });
+    commands.insert_resource(GrassWindComputeDispatch(false));
 }
 
 pub fn prepare_wind_compute_bind_group(
@@ -74,43 +78,57 @@ pub fn prepare_wind_compute_bind_group(
     existing_bind_group: Option<Res<GrassWindComputeBindGroup>>,
     mut last_wind_map: Local<Option<Handle<Image>>>,
     mut last_texture_size: Local<Option<UVec2>>,
+    mut last_wind_time: Local<f32>,
 ) {
+    let mut should_dispatch = false;
+    let wind_time = wind.wind_data._padding[0];
+    if *last_wind_time != wind_time {
+        *last_wind_time = wind_time;
+        should_dispatch = true;
+    }
+
     let Some(wind_buffer) = wind_buffer else {
+        commands.insert_resource(GrassWindComputeDispatch(false));
         return;
     };
     let Some(wind_texture) = images.get(&wind.wind_map) else {
+        commands.insert_resource(GrassWindComputeDispatch(false));
         return;
     };
     let texture_size = wind_texture.size_2d();
-    if existing_bind_group.is_some()
-        && last_wind_map
+
+    let needs_rebuild = existing_bind_group.is_none()
+        || !last_wind_map
             .as_ref()
             .is_some_and(|last_wind_map| *last_wind_map == wind.wind_map)
-        && *last_texture_size == Some(texture_size)
-    {
-        return;
+        || *last_texture_size != Some(texture_size);
+
+    if needs_rebuild {
+        should_dispatch = true;
+
+        let layout = pipeline_cache.get_bind_group_layout(&pipeline.bind_group_layout);
+        let bind_group = render_device.create_bind_group(
+            Some("grass_wind_compute_bind_group"),
+            &layout,
+            &BindGroupEntries::sequential((
+                BufferBinding {
+                    buffer: &wind_buffer.buffer,
+                    offset: 0,
+                    size: None,
+                },
+                &wind_texture.texture_view,
+            )),
+        );
+
+        commands.insert_resource(GrassWindComputeBindGroup {
+            bind_group,
+            texture_size,
+        });
+        *last_wind_map = Some(wind.wind_map.clone());
+        *last_texture_size = Some(texture_size);
     }
 
-    let layout = pipeline_cache.get_bind_group_layout(&pipeline.bind_group_layout);
-    let bind_group = render_device.create_bind_group(
-        Some("grass_wind_compute_bind_group"),
-        &layout,
-        &BindGroupEntries::sequential((
-            BufferBinding {
-                buffer: &wind_buffer.buffer,
-                offset: 0,
-                size: None,
-            },
-            &wind_texture.texture_view,
-        )),
-    );
-
-    commands.insert_resource(GrassWindComputeBindGroup {
-        bind_group,
-        texture_size,
-    });
-    *last_wind_map = Some(wind.wind_map.clone());
-    *last_texture_size = Some(texture_size);
+    commands.insert_resource(GrassWindComputeDispatch(should_dispatch));
 }
 
 #[derive(Default)]
@@ -123,6 +141,13 @@ impl render_graph::Node for GrassWindComputeNode {
         render_context: &mut RenderContext,
         world: &World,
     ) -> Result<(), render_graph::NodeRunError> {
+        let Some(dispatch) = world.get_resource::<GrassWindComputeDispatch>() else {
+            return Ok(());
+        };
+        if !dispatch.0 {
+            return Ok(());
+        }
+
         let pipeline_cache = world.resource::<PipelineCache>();
         let pipeline = world.resource::<GrassWindComputePipeline>();
 
