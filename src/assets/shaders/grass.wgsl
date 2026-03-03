@@ -12,8 +12,8 @@ struct Vertex {
     @location(2) uv: vec2<f32>,
 
     @location(3) i_pos: vec3<f32>,
-    @location(4) i_normal: vec3<f32>,
-    @location(5) i_chunk_uvw: vec3<f32>,
+    @location(4) i_normal_packed: vec4<f32>,
+    @location(5) i_chunk_uvw_packed: vec4<f32>,
 };
 
 struct Color {
@@ -67,6 +67,8 @@ struct VertexOutput {
 @vertex
 fn vertex(vertex: Vertex) -> VertexOutput {
     var out: VertexOutput;
+    let i_normal = normalize(vertex.i_normal_packed.xyz);
+    let i_chunk_uvw = vertex.i_chunk_uvw_packed.xyz;
 
     let uv = vertex.uv;
 
@@ -93,11 +95,11 @@ fn vertex(vertex: Vertex) -> VertexOutput {
     let base_p3 = vec3<f32>(xz.x, sqrt(blade_length * blade_length - dot(xz, xz)), xz.y);
     let base_normal = normalize(vec2<f32>(-base_p3.z, base_p3.x));
 
-    //let xz_displacement = sample_displacement_image(vertex.i_chunk_uvw.xz);
+    //let xz_displacement = sample_displacement_image(i_chunk_uvw.xz);
 
     //let angle = xz_displacement.r * 2.0 * PI;
     //let displace_direction = vec2<f32>(-cos(angle), -sin(angle));
-    //var displace_strength = xz_displacement.a * (1.0 - clamp(abs(xz_displacement.b - vertex.i_chunk_uvw.y) / (length / 30.0), 0.0, 1.0));
+    //var displace_strength = xz_displacement.a * (1.0 - clamp(abs(xz_displacement.b - i_chunk_uvw.y) / (length / 30.0), 0.0, 1.0));
 
     //xz += displace_direction * (length + blade.tilt) * displace_strength;
 
@@ -127,7 +129,7 @@ fn vertex(vertex: Vertex) -> VertexOutput {
     position.x = xz_pos.x;
     position.z = xz_pos.y;
 
-    let rotation_matrix = rotate_align(vec3<f32>(0.0, 1.0, 0.0), vertex.i_normal);
+    let rotation_matrix = rotate_align(vec3<f32>(0.0, 1.0, 0.0), i_normal);
     position = rotation_matrix * position;
 
     var normal = normalize(cross(tangent, vec3<f32>(blade_dir_normal.x, 0.0, blade_dir_normal.y)));
@@ -143,7 +145,7 @@ fn vertex(vertex: Vertex) -> VertexOutput {
 
     out.uv = uv;
     out.world_position = position;
-    out.world_normal = vertex.i_normal;
+    out.world_normal = i_normal;
     out.bezier_tangent = tangent;
 
     return out;

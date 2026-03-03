@@ -140,11 +140,7 @@ impl Grass {
                 let chunk_pos = position - chunk_base;
                 let chunk_uvw = chunk_pos * inv_chunk_size;
 
-                let instance = GrassData {
-                    position,
-                    normal,
-                    chunk_uvw,
-                };
+                let instance = GrassData::new(position, normal, chunk_uvw);
 
                 chunks.entry(chunk_coords).or_default().0.push(instance);
             }
