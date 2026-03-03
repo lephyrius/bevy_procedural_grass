@@ -226,6 +226,9 @@ pub struct Blade {
     pub p2_flexibility: f32,
     pub curve: f32,
     pub specular: f32,
+    pub far_lod_start: f32,
+    pub far_lod_end: f32,
+    pub _padding: [f32; 2],
 }
 
 impl Default for Blade {
@@ -239,6 +242,9 @@ impl Default for Blade {
             p2_flexibility: 0.5,
             curve: 15.0,
             specular: 0.02,
+            far_lod_start: 80.0,
+            far_lod_end: 140.0,
+            _padding: [0.0, 0.0],
         }
     }
 }

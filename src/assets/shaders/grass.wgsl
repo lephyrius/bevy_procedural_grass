@@ -33,6 +33,9 @@ struct Blade {
     p2_flexibility: f32,
     curve: f32,
     specular: f32,
+    far_lod_start: f32,
+    far_lod_end: f32,
+    _padding: vec2<f32>,
 }
 @group(3) @binding(1)
 var<uniform> blade: Blade;
@@ -162,8 +165,8 @@ fn fragment(in: VertexOutput, @builtin(front_facing) is_front: bool) -> @locatio
     let base_color = (mix(color.color_1, color.color_2, in.uv.y)).rgb;
     let ao = (mix(color.ao, vec4<f32>(1.0, 1.0, 1.0, 1.0), in.uv.y)).rgb;
     let distance = length(view.world_position - in.world_position);
-    let far_lod_start = 80.0;
-    let far_lod_end = 140.0;
+    let far_lod_start = blade.far_lod_start;
+    let far_lod_end = max(blade.far_lod_end, far_lod_start + 0.001);
     let far_lod = clamp((distance - far_lod_start) / (far_lod_end - far_lod_start), 0.0, 1.0);
     let spec_strength = mix(0.5, 0.0, clamp((distance - 20.0) / 20.0, 0.0, 1.0)) * blade.specular;
     let roughness = clamp(1.0 - blade.specular * 8.0, 0.15, 0.95);
