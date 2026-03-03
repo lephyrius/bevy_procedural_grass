@@ -79,7 +79,7 @@ impl Plugin for ProceduralGrassPlugin {
                 (
                     grass::grass::generate_grass,
                     grass::chunk::grass_culling,
-                    grass::wind::update_wind_time,
+                    grass::wind::update_wind_time_decimated,
                     ensure_no_indirect_drawing,
                 )
                     .chain(),

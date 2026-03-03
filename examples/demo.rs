@@ -18,6 +18,7 @@ fn main() {
                         amplitude: 4.0,
                         ..default()
                     },
+                    compute_update_hz: 30.0,
                     ..default()
                 },
             },

@@ -46,6 +46,9 @@ impl Default for Wind {
 pub struct GrassWind {
     pub wind_data: Wind,
     pub wind_map: Handle<Image>,
+    /// Compute wind-map update rate.
+    /// `<= 0.0` means update every frame.
+    pub compute_update_hz: f32,
 }
 
 impl ExtractComponent for GrassWind {
@@ -85,4 +88,36 @@ pub fn create_wind_map(mut wind: ResMut<GrassWind>, mut images: ResMut<Assets<Im
 
 pub fn update_wind_time(mut wind: ResMut<GrassWind>, time: Res<Time>) {
     wind.wind_data._padding[0] = time.elapsed_secs();
+}
+
+#[derive(Default)]
+pub struct WindUpdateState {
+    accumulator: f32,
+    snapped_time: f32,
+}
+
+pub fn update_wind_time_decimated(
+    mut wind: ResMut<GrassWind>,
+    time: Res<Time>,
+    mut state: Local<WindUpdateState>,
+) {
+    let hz = wind.compute_update_hz;
+    if hz <= 0.0 {
+        wind.wind_data._padding[0] = time.elapsed_secs();
+        return;
+    }
+
+    let interval = 1.0 / hz.max(0.001);
+    state.accumulator += time.delta_secs();
+
+    if state.snapped_time == 0.0 {
+        state.snapped_time = time.elapsed_secs();
+    }
+
+    if state.accumulator >= interval {
+        state.accumulator = state.accumulator.rem_euclid(interval);
+        state.snapped_time = time.elapsed_secs();
+    }
+
+    wind.wind_data._padding[0] = state.snapped_time;
 }
