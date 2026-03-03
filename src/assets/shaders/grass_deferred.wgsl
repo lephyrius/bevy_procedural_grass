@@ -61,6 +61,7 @@ struct VertexOutput {
     @location(0) uv: vec2<f32>,
     @location(1) normal: vec3<f32>,
     @location(2) bezier_tangent: vec3<f32>,
+    @location(5) world_normal: vec3<f32>,
 #ifdef MOTION_VECTOR_PREPASS
     @location(3) world_position: vec3<f32>,
     @location(4) previous_world_position: vec3<f32>,
@@ -186,6 +187,7 @@ fn vertex(vertex: Vertex) -> VertexOutput {
 
     out.uv = uv;
     out.bezier_tangent = tangent;
+    out.world_normal = i_normal;
 #ifdef MOTION_VECTOR_PREPASS
     out.world_position = position;
     out.previous_world_position = prev_position;
@@ -199,19 +201,21 @@ fn fragment(
     in: VertexOutput,
     @builtin(front_facing) is_front: bool,
 ) -> GrassDeferredFragmentOutput {
-    var normal = in.normal;
+    var shading_normal = in.normal;
+    let shadow_normal = normalize(in.world_normal);
     let uv_x_transformed = in.uv.x * 2.0 - 1.0;
     var normal_curve = blade.curve * -1.0;
     if (!is_front) {
-        normal = -normal;
+        shading_normal = -shading_normal;
         normal_curve = blade.curve;
     }
-    normal = normalize(rotate_vector(normal, in.bezier_tangent, normal_curve * uv_x_transformed));
+    shading_normal =
+        normalize(rotate_vector(shading_normal, in.bezier_tangent, normal_curve * uv_x_transformed));
 
     var out: GrassDeferredFragmentOutput;
 
 #ifdef NORMAL_PREPASS
-    out.normal = vec4(normal * 0.5 + vec3<f32>(0.5), 1.0);
+    out.normal = vec4(shadow_normal * 0.5 + vec3<f32>(0.5), 1.0);
 #endif
 
 #ifdef MOTION_VECTOR_PREPASS
@@ -228,8 +232,8 @@ fn fragment(
 
     // Deferred G-buffer material payload consumed by Bevy deferred lighting.
     var pbr = pbr_types::pbr_input_new();
-    pbr.world_normal = normal;
-    pbr.N = normal;
+    pbr.world_normal = shadow_normal;
+    pbr.N = shading_normal;
     pbr.diffuse_occlusion = ao;
     pbr.material.base_color = vec4<f32>(base_color, 1.0);
     pbr.material.perceptual_roughness = roughness;
