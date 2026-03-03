@@ -44,6 +44,8 @@ pub(crate) const GRASS_SHADER_HANDLE: Handle<Shader> =
     uuid_handle!("6e91d4b1-491c-4a26-b15f-5fd4f57764df");
 pub(crate) const GRASS_WIND_COMPUTE_SHADER_HANDLE: Handle<Shader> =
     uuid_handle!("9ced8fce-d838-457a-a5d9-3ce7d5b6d557");
+pub(crate) const GRASS_INDIRECT_COMPUTE_SHADER_HANDLE: Handle<Shader> =
+    uuid_handle!("6a5c509b-6da8-4ea2-8320-8f2f5d7bf4f6");
 
 #[derive(Clone)]
 pub struct ProceduralGrassPlugin {
@@ -76,6 +78,12 @@ impl Plugin for ProceduralGrassPlugin {
             app,
             GRASS_WIND_COMPUTE_SHADER_HANDLE,
             "assets/shaders/wind_compute.wgsl",
+            Shader::from_wgsl
+        );
+        load_internal_asset!(
+            app,
+            GRASS_INDIRECT_COMPUTE_SHADER_HANDLE,
+            "assets/shaders/indirect_compute.wgsl",
             Shader::from_wgsl
         );
 
@@ -140,7 +148,13 @@ impl Plugin for ProceduralGrassPlugin {
         render_app
             .add_render_command::<Opaque3d, DrawGrass>()
             .init_resource::<SpecializedMeshPipelines<GrassPipeline>>()
-            .add_systems(RenderStartup, render::compute::init_wind_compute_pipeline)
+            .add_systems(
+                RenderStartup,
+                (
+                    render::compute::init_wind_compute_pipeline,
+                    render::compute::init_indirect_compute_pipeline,
+                ),
+            )
             .add_systems(
                 Render,
                 (
@@ -160,13 +174,23 @@ impl Plugin for ProceduralGrassPlugin {
                         .in_set(RenderSystems::PrepareBindGroups),
                     render::compute::prepare_wind_compute_bind_group
                         .in_set(RenderSystems::PrepareBindGroups),
+                    render::compute::prepare_indirect_compute_bind_group
+                        .in_set(RenderSystems::PrepareBindGroups),
                 ),
             )
             .insert_resource(indirect_settings);
 
         let mut render_graph = render_app.world_mut().resource_mut::<RenderGraph>();
         render_graph.add_node(GrassWindComputeLabel, GrassWindComputeNode);
+        render_graph.add_node(
+            render::compute::GrassIndirectComputeLabel,
+            render::compute::GrassIndirectComputeNode,
+        );
         render_graph.add_node_edge(GrassWindComputeLabel, CameraDriverLabel);
+        render_graph.add_node_edge(
+            render::compute::GrassIndirectComputeLabel,
+            CameraDriverLabel,
+        );
     }
 
     fn finish(&self, app: &mut App) {
