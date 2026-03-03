@@ -1,6 +1,11 @@
 use std::collections::HashMap;
 
-use bevy::{ecs::query::QueryItem, prelude::*, render::extract_component::ExtractComponent};
+use bevy::{
+    camera::primitives::{Frustum, Sphere},
+    ecs::query::QueryItem,
+    prelude::*,
+    render::extract_component::ExtractComponent,
+};
 
 use crate::render::instance::GrassChunkData;
 
@@ -70,12 +75,15 @@ fn chunk_hash_01(coords: (i32, i32, i32)) -> f32 {
 
 pub(crate) fn grass_culling(
     mut query: Query<&mut GrassChunks>,
-    camera_query: Query<&GlobalTransform, With<Camera3d>>,
+    camera_query: Query<(&GlobalTransform, &Frustum), With<Camera3d>>,
     mut grass_asset: ResMut<Assets<GrassChunkData>>,
     grass_config: Res<GrassConfig>,
     mut chunk_coords_cache: Local<Vec<(i32, i32, i32)>>,
 ) {
-    let camera_position = camera_query.iter().next().map(GlobalTransform::translation);
+    let camera_data = camera_query
+        .iter()
+        .next()
+        .map(|(transform, frustum)| (transform.translation(), *frustum));
 
     for mut chunks in query.iter_mut() {
         chunks.render.clear();
@@ -88,9 +96,10 @@ pub(crate) fn grass_culling(
 
         let chunk_size = chunks.chunk_size;
         let chunk_center_offset = Vec3::splat(chunk_size * 0.5);
+        let chunk_bounding_radius = chunk_size * 0.866_025_4;
         let chunk_count = chunk_coords_cache.len();
 
-        let Some(cam_pos) = camera_position else {
+        let Some((cam_pos, frustum)) = camera_data else {
             chunks.render.reserve(chunk_count);
             for chunk_coord in chunk_coords_cache.iter().copied() {
                 let handle = if let Some(handle) = chunks.loaded.get(&chunk_coord) {
@@ -122,6 +131,14 @@ pub(crate) fn grass_culling(
                 chunk_coord.2 as f32,
             ) * chunk_size;
             let chunk_center = world_pos + chunk_center_offset;
+            let chunk_sphere = Sphere {
+                center: chunk_center.into(),
+                radius: chunk_bounding_radius,
+            };
+            if !frustum.intersects_sphere(&chunk_sphere, false) {
+                chunks.loaded.remove(&chunk_coord);
+                continue;
+            }
 
             let d3_vec = chunk_center - cam_pos;
             let d3_distance_sq = d3_vec.length_squared();
