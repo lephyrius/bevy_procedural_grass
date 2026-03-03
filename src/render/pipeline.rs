@@ -85,11 +85,6 @@ fn grass_instance_layout() -> VertexBufferLayout {
                 offset: size_of::<Vec3>() as u64,
                 shader_location: 4,
             },
-            VertexAttribute {
-                format: VertexFormat::Unorm16x4,
-                offset: (size_of::<Vec3>() + size_of::<[i16; 4]>()) as u64,
-                shader_location: 5,
-            },
         ],
     }
 }

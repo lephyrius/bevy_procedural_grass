@@ -40,6 +40,7 @@ pub(crate) fn grass_queue(
     views: Query<(&ExtractedView, &Msaa, Has<DeferredPrepass>)>,
     mesh_allocator: Res<MeshAllocator>,
     mut change_tick: Local<Tick>,
+    mut reported_specialize_error: Local<bool>,
 ) {
     let draw_custom = opaque_3d_draw_functions.read().id::<DrawGrass>();
 
@@ -73,9 +74,17 @@ pub(crate) fn grass_queue(
             let (vertex_slab, index_slab) = mesh_allocator.mesh_slabs(&mesh_instance.mesh_asset_id);
 
             let key = view_key | MeshPipelineKey::from_bits_retain(mesh.key_bits.bits());
-            let pipeline = pipelines
-                .specialize(&pipeline_cache, &custom_pipeline, key, &mesh.layout)
-                .unwrap();
+            let pipeline =
+                match pipelines.specialize(&pipeline_cache, &custom_pipeline, key, &mesh.layout) {
+                    Ok(pipeline) => pipeline,
+                    Err(err) => {
+                        if !*reported_specialize_error {
+                            *reported_specialize_error = true;
+                            eprintln!("grass forward pipeline specialization failed: {err}");
+                        }
+                        continue;
+                    }
+                };
 
             let next_change_tick = change_tick.get() + 1;
             change_tick.set(next_change_tick);
@@ -120,6 +129,7 @@ pub(crate) fn grass_queue_deferred(
     )>,
     mesh_allocator: Res<MeshAllocator>,
     mut change_tick: Local<Tick>,
+    mut reported_specialize_error: Local<bool>,
 ) {
     let Some(custom_pipeline) = custom_pipeline else {
         return;
@@ -166,9 +176,17 @@ pub(crate) fn grass_queue_deferred(
             let (vertex_slab, index_slab) = mesh_allocator.mesh_slabs(&mesh_instance.mesh_asset_id);
 
             let key = view_key | MeshPipelineKey::from_bits_retain(mesh.key_bits.bits());
-            let pipeline = pipelines
-                .specialize(&pipeline_cache, &custom_pipeline, key, &mesh.layout)
-                .unwrap();
+            let pipeline =
+                match pipelines.specialize(&pipeline_cache, &custom_pipeline, key, &mesh.layout) {
+                    Ok(pipeline) => pipeline,
+                    Err(err) => {
+                        if !*reported_specialize_error {
+                            *reported_specialize_error = true;
+                            eprintln!("grass deferred pipeline specialization failed: {err}");
+                        }
+                        continue;
+                    }
+                };
 
             let next_change_tick = change_tick.get() + 1;
             change_tick.set(next_change_tick);

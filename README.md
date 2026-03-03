@@ -71,6 +71,11 @@ Deferred variants of the examples are available:
 - `cargo run --example sphere_deferred`
 - `cargo run --example inspect_deferred --features bevy-inspector-egui`
 
+Deferred mode notes:
+- Add `DepthPrepass`, `NormalPrepass`, and `DeferredPrepass` to your `Camera3d`.
+- The deferred grass path currently uses direct instanced draws for stability.
+- For maximum throughput today, prefer the default forward path with indirect draws enabled.
+
 ## Performance Presets
 Use a preset to apply coherent tuning for culling/LOD, wind compute rate, and far shading:
 

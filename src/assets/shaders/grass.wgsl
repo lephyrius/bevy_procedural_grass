@@ -13,7 +13,6 @@ struct Vertex {
 
     @location(3) i_pos: vec3<f32>,
     @location(4) i_normal_packed: vec4<f32>,
-    @location(5) i_chunk_uvw_packed: vec4<f32>,
 };
 
 struct Color {
@@ -68,7 +67,6 @@ struct VertexOutput {
 fn vertex(vertex: Vertex) -> VertexOutput {
     var out: VertexOutput;
     let i_normal = normalize(vertex.i_normal_packed.xyz);
-    let i_chunk_uvw = vertex.i_chunk_uvw_packed.xyz;
 
     let uv = vertex.uv;
 
@@ -79,12 +77,11 @@ fn vertex(vertex: Vertex) -> VertexOutput {
 
     let rad = wind.direction * PI / 180.0;
     let wind_direction = vec2<f32>(cos(rad), sin(rad));
-    var facing = normalize(vec2<f32>(mix(-1., 1., hash_id), mix(-1., 1., random1D(hash_id * vertex.i_pos.x))));
 
     let random_point = vec2<f32>(fract(vertex.i_pos.x * 0.1 * hash_id), fract(vertex.i_pos.y * 0.1 * hash_id));
     let r = sample_wind_map(random_point, wind.speed).r;
 
-    var wind_pos = fract(vec2<f32>(vertex.i_pos.x, vertex.i_pos.z) / wind.scale);
+    let wind_pos = fract(vec2<f32>(vertex.i_pos.x, vertex.i_pos.z) / wind.scale);
     let t = sample_wind_map(wind_pos, wind.speed).r;
 
     let blade_length = mix(blade.length, blade.length + blade.length / 2., fract(hash_id));
@@ -95,18 +92,11 @@ fn vertex(vertex: Vertex) -> VertexOutput {
     let base_p3 = vec3<f32>(xz.x, sqrt(blade_length * blade_length - dot(xz, xz)), xz.y);
     let base_normal = normalize(vec2<f32>(-base_p3.z, base_p3.x));
 
-    //let xz_displacement = sample_displacement_image(i_chunk_uvw.xz);
-
-    //let angle = xz_displacement.r * 2.0 * PI;
-    //let displace_direction = vec2<f32>(-cos(angle), -sin(angle));
-    //var displace_strength = xz_displacement.a * (1.0 - clamp(abs(xz_displacement.b - i_chunk_uvw.y) / (length / 30.0), 0.0, 1.0));
-
-    //xz += displace_direction * (length + blade.tilt) * displace_strength;
-
     xz += -wind_direction * (0.5 * (sin(t * wind.frequency))) * wind.amplitude;
     xz += base_normal * sin(r * 0.2) * wind.oscillation;
 
-    var y = max(-pow((length(xz) * 0.5), 2.) + blade_length, 0.01);
+    let xz_len_half = length(xz) * 0.5;
+    var y = max(-(xz_len_half * xz_len_half) + blade_length, 0.01);
     var p3 = vec3<f32>(xz.x, y, xz.y);
 
     let p0 = vec3<f32>(0.0);
@@ -116,15 +106,14 @@ fn vertex(vertex: Vertex) -> VertexOutput {
     var blade_dir_normal = normalize(vec2<f32>(-p3.z, p3.x));
     var blade_normal = normalize(cross(normalize(p3), vec3<f32>(blade_dir_normal.x, 0., blade_dir_normal.y)));
 
-    let distance = distance(base_p3, p3);
-
     p1 += blade_normal * (y - blade_length) * mix(blade.p1_flexibility, blade.p1_flexibility + 0.2, fract(hash_id * 99.));
     p2 += blade_normal * (y - blade_length) * mix(blade.p2_flexibility, blade.p2_flexibility + 0.2, fract(hash_id * 2480.));
 
     let bezier = cubic_bezier(uv.y, p0, p1, p2, p3);
     let tangent = bezier_tangent(uv.y, p0, p1, p2, p3);
     position.y = bezier.y;
-    let width = blade.width * (1.0 - pow(uv.y, 2.));
+    let uv_y2 = uv.y * uv.y;
+    let width = blade.width * (1.0 - uv_y2);
     let xz_pos = bezier.xz + (base_normal * vertex.position.x * width);
     position.x = xz_pos.x;
     position.z = xz_pos.y;

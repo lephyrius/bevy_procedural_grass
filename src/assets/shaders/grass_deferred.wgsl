@@ -14,7 +14,6 @@ struct Vertex {
 
     @location(3) i_pos: vec3<f32>,
     @location(4) i_normal_packed: vec4<f32>,
-    @location(5) i_chunk_uvw_packed: vec4<f32>,
 };
 
 struct Color {
@@ -60,9 +59,7 @@ struct VertexOutput {
     @builtin(position) clip_position: vec4<f32>,
     @location(0) uv: vec2<f32>,
     @location(1) normal: vec3<f32>,
-    @location(2) world_position: vec3<f32>,
-    @location(3) world_normal: vec3<f32>,
-    @location(4) bezier_tangent: vec3<f32>,
+    @location(2) bezier_tangent: vec3<f32>,
 };
 
 struct GrassDeferredFragmentOutput {
@@ -111,7 +108,8 @@ fn vertex(vertex: Vertex) -> VertexOutput {
     xz += -wind_direction * (0.5 * (sin(t * wind.frequency))) * wind.amplitude;
     xz += base_normal * sin(r * 0.2) * wind.oscillation;
 
-    let y = max(-pow((length(xz) * 0.5), 2.0) + blade_length, 0.01);
+    let xz_len_half = length(xz) * 0.5;
+    let y = max(-(xz_len_half * xz_len_half) + blade_length, 0.01);
     let p3 = vec3<f32>(xz.x, y, xz.y);
 
     let p0 = vec3<f32>(0.0);
@@ -127,7 +125,8 @@ fn vertex(vertex: Vertex) -> VertexOutput {
     let bezier = cubic_bezier(uv.y, p0, p1, p2, p3);
     let tangent = bezier_tangent(uv.y, p0, p1, p2, p3);
     position.y = bezier.y;
-    let width = blade.width * (1.0 - pow(uv.y, 2.0));
+    let uv_y2 = uv.y * uv.y;
+    let width = blade.width * (1.0 - uv_y2);
     let xz_pos = bezier.xz + (base_normal * vertex.position.x * width);
     position.x = xz_pos.x;
     position.z = xz_pos.y;
@@ -147,8 +146,6 @@ fn vertex(vertex: Vertex) -> VertexOutput {
     );
 
     out.uv = uv;
-    out.world_position = position;
-    out.world_normal = i_normal;
     out.bezier_tangent = tangent;
 
     return out;
@@ -168,9 +165,6 @@ fn fragment(
     }
     normal = normalize(rotate_vector(normal, in.bezier_tangent, normal_curve * uv_x_transformed));
 
-    let base_color = (mix(color.color_1, color.color_2, in.uv.y)).rgb;
-    let ao = (mix(color.ao, vec4<f32>(1.0, 1.0, 1.0, 1.0), in.uv.y)).rgb;
-    let roughness = clamp(1.0 - blade.specular * 8.0, 0.15, 0.95);
     var out: GrassDeferredFragmentOutput;
 
 #ifdef NORMAL_PREPASS
@@ -182,16 +176,19 @@ fn fragment(
 #endif
 
 #ifdef DEFERRED_PREPASS
-    // Baby step 2: same gbuffer path, now lit by deferred PBR.
+    let base_color = (mix(color.color_1, color.color_2, in.uv.y)).rgb;
+    let ao = (mix(color.ao, vec4<f32>(1.0, 1.0, 1.0, 1.0), in.uv.y)).rgb;
+    let roughness = clamp(1.0 - blade.specular * 8.0, 0.15, 0.95);
+
+    // Deferred G-buffer material payload consumed by Bevy deferred lighting.
     var pbr = pbr_types::pbr_input_new();
-    pbr.world_normal = normalize(in.world_normal);
+    pbr.world_normal = normal;
     pbr.N = normal;
     pbr.diffuse_occlusion = ao;
     pbr.material.base_color = vec4<f32>(base_color, 1.0);
     pbr.material.perceptual_roughness = roughness;
     pbr.material.metallic = 0.0;
     pbr.material.reflectance = vec3<f32>(0.5);
-    // Step 1: re-enable transmission-related material properties.
     pbr.material.diffuse_transmission = clamp((1.0 - in.uv.y) * 0.35, 0.0, 0.35);
     pbr.material.specular_transmission = 0.05;
     pbr.material.thickness = mix(0.05, 0.2, 1.0 - in.uv.y);
