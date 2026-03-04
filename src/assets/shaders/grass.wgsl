@@ -84,7 +84,9 @@ fn vertex(vertex: Vertex) -> VertexOutput {
     let wind_pos = fract(vec2<f32>(vertex.i_pos.x, vertex.i_pos.z) / wind.scale);
     let t = sample_wind_map(wind_pos, wind.speed).r;
 
-    let blade_length = mix(blade.length, blade.length + blade.length / 2., fract(hash_id));
+    let height_factor = clamp(vertex.i_normal_packed.w, 0.0, 1.0);
+    let base_blade_length = mix(blade.length, blade.length + blade.length / 2., fract(hash_id));
+    let blade_length = max(base_blade_length * height_factor, 0.01);
 
     let theta = 2.0 * PI * random1D(hash_id);
     let radius = blade_length * mix(blade.tilt - blade.tilt_variance, blade.tilt, fract(hash_id * 123.));

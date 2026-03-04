@@ -88,8 +88,9 @@ fn build_density_map(size: u32) -> Image {
 fn build_height_map(size: u32) -> Image {
     build_mask_map(size, |uv| {
         let wave = 0.5 + 0.5 * (uv.x * std::f32::consts::TAU * 2.0).sin();
-        let threshold = 0.25 + wave * 0.35;
-        if uv.y >= threshold { 1.0 } else { 0.0 }
+        let crest = 0.2 + wave * 0.6;
+        let signed = (uv.y - crest) * 4.0;
+        (0.5 + signed * 0.5).clamp(0.0, 1.0)
     })
 }
 

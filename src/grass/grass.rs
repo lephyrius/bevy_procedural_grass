@@ -88,7 +88,7 @@ impl Default for Grass {
 pub struct GrassPlacementMaps {
     /// Per-texel density multiplier in [0, 1]. 0 removes grass, 1 keeps full density.
     pub density_map: Option<Handle<Image>>,
-    /// Additional placement mask in [0, 1], useful for height/splat-style masks.
+    /// Per-instance blade height multiplier in [0, 1], sampled from UV0.
     pub height_map: Option<Handle<Image>>,
     /// UV transform applied before map sampling.
     pub uv_scale: Vec2,
@@ -240,13 +240,9 @@ impl Grass {
             if let Some((uv0, uv1, uv2)) = triangle_uvs {
                 let uv_center = (uv0 + uv1 + uv2) * (1.0 / 3.0);
                 let sample_weight = |uv: Vec2| {
-                    let density_weight = density_sampler
+                    density_sampler
                         .map(|sampler| sampler.sample_intensity(uv))
-                        .unwrap_or(1.0);
-                    let height_weight = height_sampler
-                        .map(|sampler| sampler.sample_intensity(uv))
-                        .unwrap_or(1.0);
-                    (density_weight * height_weight).clamp(0.0, 1.0)
+                        .unwrap_or(1.0)
                 };
                 // Fast out for fully masked triangles while avoiding over-aggressive
                 // culling on low-tessellation meshes.
@@ -271,17 +267,20 @@ impl Grass {
                 let r1 = rng.random_range(0.0..1.0_f32).sqrt();
                 let r2 = rng.random_range(0.0..1.0_f32);
                 let barycentric = Vec3::new(1.0 - r1, r1 * (1.0 - r2), r1 * r2);
+                let mut height_factor = 1.0;
                 if let Some((uv0, uv1, uv2)) = triangle_uvs {
                     let uv = uv0 * barycentric.x + uv1 * barycentric.y + uv2 * barycentric.z;
                     let density_weight = density_sampler
                         .map(|sampler| sampler.sample_intensity(uv))
                         .unwrap_or(1.0);
-                    let height_weight = height_sampler
+                    if density_weight <= 0.0 || rng.random_range(0.0..1.0_f32) > density_weight {
+                        continue;
+                    }
+                    height_factor = height_sampler
                         .map(|sampler| sampler.sample_intensity(uv))
-                        .unwrap_or(1.0);
-                    let placement_weight = (density_weight * height_weight).clamp(0.0, 1.0);
-                    if placement_weight <= 0.0 || rng.random_range(0.0..1.0_f32) > placement_weight
-                    {
+                        .unwrap_or(1.0)
+                        .clamp(0.0, 1.0);
+                    if height_factor <= f32::EPSILON {
                         continue;
                     }
                 } else if maps_requested_but_no_uv {
@@ -297,7 +296,7 @@ impl Grass {
                     (position.z * inv_chunk_size).floor() as i32,
                 );
 
-                let instance = GrassData::new(position, normal);
+                let instance = GrassData::with_height_factor(position, normal, height_factor);
 
                 chunks.entry(chunk_coords).or_default().0.push(instance);
             }

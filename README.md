@@ -95,7 +95,8 @@ commands.spawn(GrassBundle {
 ```
 
 Notes:
-- Both maps are interpreted as `[0, 1]` masks and multiplied together.
+- `density_map` is a `[0, 1]` placement mask (probability/density multiplier).
+- `height_map` is a `[0, 1]` blade-height multiplier.
 - Meshes must provide `UV_0` for map sampling.
 - Images need CPU-visible data (`RenderAssetUsages` including `MAIN_WORLD`) so placement can be generated on the CPU.
 

@@ -14,6 +14,7 @@ use bytemuck::{Pod, Zeroable};
 #[repr(C)]
 pub struct GrassData {
     pub position: [f32; 3],
+    // xyz packs normal, w packs per-instance blade height factor in [0, 1].
     pub normal_packed: [i16; 4],
 }
 
@@ -21,6 +22,12 @@ impl GrassData {
     #[inline]
     /// Packs one grass instance position and normal into the render format.
     pub fn new(position: Vec3, normal: Vec3) -> Self {
+        Self::with_height_factor(position, normal, 1.0)
+    }
+
+    #[inline]
+    /// Packs one grass instance including an optional blade-height factor.
+    pub fn with_height_factor(position: Vec3, normal: Vec3, height_factor: f32) -> Self {
         let normal = normal.normalize_or_zero();
         Self {
             position: position.to_array(),
@@ -28,7 +35,7 @@ impl GrassData {
                 pack_snorm16(normal.x),
                 pack_snorm16(normal.y),
                 pack_snorm16(normal.z),
-                0,
+                pack_snorm16(height_factor.clamp(0.0, 1.0)),
             ],
         }
     }
