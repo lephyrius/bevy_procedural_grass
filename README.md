@@ -59,10 +59,20 @@ fn setup(
         grass: Grass {
             entity: Some(terrain),
             ..default()
-        },
+        }
+        .with_blade_size(2.0, 0.08),
         ..default()
     });
 }
+```
+
+Blade size can also be set directly:
+
+```rust
+let mut grass = Grass::default();
+grass.set_blade_size(1.8, 0.06);
+grass.blade.length = 2.2; // equivalent direct field access
+grass.blade.width = 0.07;
 ```
 
 Deferred variants of the examples are available:
@@ -85,6 +95,7 @@ commands.spawn(GrassBundle {
         maps: GrassPlacementMaps {
             density_map: Some(asset_server.load("masks/grass_density.png")),
             height_map: Some(asset_server.load("masks/terrain_height.png")),
+            height_scale: 1.0,
             uv_scale: Vec2::ONE,
             uv_offset: Vec2::ZERO,
         },
@@ -97,6 +108,7 @@ commands.spawn(GrassBundle {
 Notes:
 - `density_map` is a `[0, 1]` placement mask (probability/density multiplier).
 - `height_map` is a `[0, 1]` blade-height multiplier.
+- `height_scale` multiplies sampled `height_map` values before clamping to `[0, 1]`.
 - Meshes must provide `UV_0` for map sampling.
 - Images need CPU-visible data (`RenderAssetUsages` including `MAIN_WORLD`) so placement can be generated on the CPU.
 

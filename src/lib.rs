@@ -56,7 +56,7 @@ pub mod prelude {
     pub use crate::GrassDeferredLightingSettings;
     pub use crate::grass::{
         config::GrassConfig,
-        grass::{Grass, GrassBundle, GrassLODMesh, GrassPlacementMaps},
+        grass::{Blade, Grass, GrassBundle, GrassLODMesh, GrassPlacementMaps},
         mesh::GrassMesh,
         wind::{GrassWind, Wind},
     };

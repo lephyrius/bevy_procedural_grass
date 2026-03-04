@@ -41,6 +41,7 @@ fn setup(
             maps: GrassPlacementMaps {
                 density_map: Some(density_map),
                 height_map: Some(height_map),
+                height_scale: 1.0,
                 uv_scale: Vec2::splat(2.0),
                 uv_offset: Vec2::new(0.1, 0.0),
             },

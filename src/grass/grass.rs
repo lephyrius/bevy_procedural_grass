@@ -82,6 +82,22 @@ impl Default for Grass {
     }
 }
 
+impl Grass {
+    #[inline]
+    /// Sets blade length and width in one call.
+    pub fn set_blade_size(&mut self, length: f32, width: f32) {
+        self.blade.length = length;
+        self.blade.width = width;
+    }
+
+    #[inline]
+    /// Returns an updated grass config with the requested blade length and width.
+    pub fn with_blade_size(mut self, length: f32, width: f32) -> Self {
+        self.set_blade_size(length, width);
+        self
+    }
+}
+
 #[derive(Clone)]
 #[cfg_attr(feature = "bevy-inspector-egui", derive(Reflect, InspectorOptions))]
 #[cfg_attr(feature = "bevy-inspector-egui", reflect(InspectorOptions))]
@@ -90,6 +106,8 @@ pub struct GrassPlacementMaps {
     pub density_map: Option<Handle<Image>>,
     /// Per-instance blade height multiplier in [0, 1], sampled from UV0.
     pub height_map: Option<Handle<Image>>,
+    /// Global multiplier applied to sampled `height_map` values before clamping.
+    pub height_scale: f32,
     /// UV transform applied before map sampling.
     pub uv_scale: Vec2,
     /// UV transform applied before map sampling.
@@ -108,6 +126,7 @@ impl Default for GrassPlacementMaps {
         Self {
             density_map: None,
             height_map: None,
+            height_scale: 1.0,
             uv_scale: Vec2::ONE,
             uv_offset: Vec2::ZERO,
         }
@@ -277,7 +296,7 @@ impl Grass {
                         continue;
                     }
                     height_factor = height_sampler
-                        .map(|sampler| sampler.sample_intensity(uv))
+                        .map(|sampler| sampler.sample_intensity(uv) * self.maps.height_scale)
                         .unwrap_or(1.0)
                         .clamp(0.0, 1.0);
                     if height_factor <= f32::EPSILON {

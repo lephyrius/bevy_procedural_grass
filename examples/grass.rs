@@ -31,7 +31,8 @@ fn setup(
         grass: Grass {
             entity: Some(terrain),
             ..default()
-        },
+        }
+        .with_blade_size(2.0, 0.08),
         ..default()
     });
 
