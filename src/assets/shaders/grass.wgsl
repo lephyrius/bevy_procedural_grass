@@ -54,6 +54,18 @@ var<uniform> wind: Wind;
 @group(4) @binding(1)
 var t_wind_map: texture_2d<f32>;
 
+struct GrassInteractor {
+    position_radius: vec4<f32>,
+    params: vec4<f32>,
+}
+
+struct GrassInteraction {
+    count_and_padding: vec4<u32>,
+    interactors: array<GrassInteractor, 32>,
+}
+@group(5) @binding(0)
+var<uniform> interaction: GrassInteraction;
+
 struct VertexOutput {
     @builtin(position) clip_position: vec4<f32>,
     @location(1) uv: vec2<f32>,
@@ -87,6 +99,7 @@ fn vertex(vertex: Vertex) -> VertexOutput {
     let height_factor = clamp(vertex.i_normal_packed.w, 0.0, 1.0);
     let base_blade_length = mix(blade.length, blade.length + blade.length / 2., fract(hash_id));
     let blade_length = max(base_blade_length * height_factor, 0.01);
+    let rotation_matrix = rotate_align(vec3<f32>(0.0, 1.0, 0.0), i_normal);
 
     let theta = 2.0 * PI * random1D(hash_id);
     let radius = blade_length * mix(blade.tilt - blade.tilt_variance, blade.tilt, fract(hash_id * 123.));
@@ -96,6 +109,9 @@ fn vertex(vertex: Vertex) -> VertexOutput {
 
     xz += -wind_direction * (0.5 * (sin(t * wind.frequency))) * wind.amplitude;
     xz += base_normal * sin(r * 0.2) * wind.oscillation;
+    let interaction_push_world = compute_interaction_push(vertex.i_pos.xyz, i_normal);
+    let interaction_push_local = transpose(rotation_matrix) * interaction_push_world;
+    xz += interaction_push_local.xz * (height_factor * height_factor);
 
     let xz_len_half = length(xz) * 0.5;
     var y = max(-(xz_len_half * xz_len_half) + blade_length, 0.01);
@@ -120,7 +136,6 @@ fn vertex(vertex: Vertex) -> VertexOutput {
     position.x = xz_pos.x;
     position.z = xz_pos.y;
 
-    let rotation_matrix = rotate_align(vec3<f32>(0.0, 1.0, 0.0), i_normal);
     position = rotation_matrix * position;
 
     var normal = normalize(cross(tangent, vec3<f32>(blade_dir_normal.x, 0.0, blade_dir_normal.y)));
@@ -261,6 +276,43 @@ fn rotate_align(v1: vec3<f32>, v2: vec3<f32>) -> mat3x3<f32> {
         );
 
     return result;
+}
+
+fn compute_interaction_push(blade_pos: vec3<f32>, surface_normal: vec3<f32>) -> vec3<f32> {
+    var push = vec3<f32>(0.0);
+    let count = min(interaction.count_and_padding.x, 32u);
+
+    for (var i: u32 = 0u; i < count; i = i + 1u) {
+        let interactor = interaction.interactors[i];
+        let radius = max(interactor.position_radius.w, 0.001);
+        let strength = max(interactor.params.x, 0.0);
+        let falloff = max(interactor.params.y, 0.1);
+        if (strength <= 0.0) {
+            continue;
+        }
+
+        let delta = blade_pos - interactor.position_radius.xyz;
+        let distance = length(delta);
+        if (distance >= radius) {
+            continue;
+        }
+
+        let planar = delta - surface_normal * dot(delta, surface_normal);
+        let planar_len = length(planar);
+        if (planar_len <= 0.0001) {
+            continue;
+        }
+
+        let influence = pow(clamp(1.0 - distance / radius, 0.0, 1.0), falloff) * strength;
+        push += (planar / planar_len) * influence;
+    }
+
+    let push_len = length(push);
+    if (push_len > 2.0) {
+        push = (push / push_len) * 2.0;
+    }
+
+    return push;
 }
 
 fn sample_wind_map(uv: vec2<f32>, speed: f32) -> vec4<f32> {

@@ -23,10 +23,13 @@ use bevy::{
     },
 };
 
+#[cfg(feature = "bevy-inspector-egui")]
+use grass::interaction::GrassInteractor;
 use grass::{
     chunk::GrassChunks,
     config::GrassConfig,
     grass::{Grass, GrassLODMesh},
+    interaction::GrassInteractionUniform,
     wind::GrassWind,
 };
 use render::instance::{GrassChunkBuffer, GrassChunkData};
@@ -57,6 +60,7 @@ pub mod prelude {
     pub use crate::grass::{
         config::GrassConfig,
         grass::{Blade, Grass, GrassBundle, GrassLODMesh, GrassPlacementMaps},
+        interaction::GrassInteractor,
         mesh::GrassMesh,
         wind::{GrassWind, Wind},
     };
@@ -142,6 +146,7 @@ impl Plugin for ProceduralGrassPlugin {
         #[cfg(feature = "bevy-inspector-egui")]
         {
             app.register_type::<Grass>()
+                .register_type::<GrassInteractor>()
                 .register_type::<GrassWind>()
                 .register_type::<GrassConfig>();
         }
@@ -158,6 +163,7 @@ impl Plugin for ProceduralGrassPlugin {
 
         app.insert_resource(self.wind.clone())
             .insert_resource(self.config)
+            .init_resource::<GrassInteractionUniform>()
             .add_systems(
                 Startup,
                 (
@@ -181,6 +187,7 @@ impl Plugin for ProceduralGrassPlugin {
                     grass::grass::generate_grass,
                     grass::chunk::grass_culling,
                     grass::wind::update_wind_time_decimated,
+                    grass::interaction::update_grass_interaction_uniform,
                 )
                     .chain(),
             )
@@ -192,6 +199,7 @@ impl Plugin for ProceduralGrassPlugin {
                 ExtractComponentPlugin::<GrassLODMesh>::default(),
                 ExtractComponentPlugin::<GrassWind>::default(),
                 ExtractResourcePlugin::<GrassWind>::default(),
+                ExtractResourcePlugin::<GrassInteractionUniform>::default(),
             ));
         #[cfg(feature = "forward")]
         app.insert_resource(deferred_lighting_settings)
@@ -251,11 +259,15 @@ impl Plugin for ProceduralGrassPlugin {
                             .in_set(RenderSystems::PrepareResources),
                         render::prepare::prepare_local_wind_buffers
                             .in_set(RenderSystems::PrepareResources),
+                        render::prepare::prepare_grass_interaction_buffer
+                            .in_set(RenderSystems::PrepareResources),
                         render::prepare::prepare_grass_bind_group
                             .in_set(RenderSystems::PrepareBindGroups),
                         render::prepare::prepare_global_wind_bind_group
                             .in_set(RenderSystems::PrepareBindGroups),
                         render::prepare::prepare_local_wind_bind_group
+                            .in_set(RenderSystems::PrepareBindGroups),
+                        render::prepare::prepare_grass_interaction_bind_group
                             .in_set(RenderSystems::PrepareBindGroups),
                         render::compute::prepare_wind_compute_bind_group
                             .in_set(RenderSystems::PrepareBindGroups),

@@ -75,6 +75,24 @@ grass.blade.length = 2.2; // equivalent direct field access
 grass.blade.width = 0.07;
 ```
 
+## Grass Interaction
+Attach `GrassInteractor` to any entity that should push nearby grass away:
+
+```rust
+commands.spawn((
+    Mesh3d(meshes.add(Capsule3d::new(0.35, 1.0))),
+    MeshMaterial3d(materials.add(Color::srgb(0.8, 0.8, 0.8))),
+    Transform::from_xyz(0.0, 1.0, 0.0),
+    GrassInteractor {
+        radius: 2.0,
+        strength: 1.2,
+        falloff: 2.0,
+    },
+));
+```
+
+`radius` controls reach, `strength` controls push amount, and `falloff` controls how quickly the effect fades toward the edge.
+
 Deferred variants of the examples are available:
 - `cargo run --example grass_deferred`
 - `cargo run --example demo_deferred`
@@ -84,6 +102,9 @@ Deferred variants of the examples are available:
 
 Placement-map example:
 - `cargo run --example grass_maps`
+
+Interaction example (moving interactor):
+- `cargo run --example grass_interaction`
 
 ## Placement Maps
 You can gate grass placement with optional density and height masks sampled from mesh UV0:

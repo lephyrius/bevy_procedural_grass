@@ -16,6 +16,7 @@ use bevy::{
 use crate::grass::{
     chunk::{GrassLOD, RenderGrassChunks},
     grass::{Grass, GrassLODMesh},
+    interaction::GrassInteractionUniform,
     wind::GrassWind,
 };
 
@@ -32,6 +33,7 @@ pub type DrawGrass = (
     SetMeshBindGroup<2>,
     SetGrassBindGroup<3>,
     SetWindBindGroup<4>,
+    SetInteractionBindGroup<5>,
     DrawGrassInstanced,
 );
 
@@ -42,6 +44,7 @@ pub type DrawGrassDeferred = (
     SetMeshBindGroup<2>,
     SetGrassBindGroup<3>,
     SetWindBindGroup<4>,
+    SetInteractionBindGroup<5>,
     DrawGrassInstancedDeferred,
 );
 
@@ -85,6 +88,24 @@ impl<P: PhaseItem, const I: usize> RenderCommand<P> for SetWindBindGroup<I> {
             global_wind.into_inner()
         };
         pass.set_bind_group(I, &bind_group.bind_group, &[]);
+        RenderCommandResult::Success
+    }
+}
+
+pub struct SetInteractionBindGroup<const I: usize>;
+impl<P: PhaseItem, const I: usize> RenderCommand<P> for SetInteractionBindGroup<I> {
+    type Param = SRes<BufferBindGroup<GrassInteractionUniform>>;
+    type ViewQuery = ();
+    type ItemQuery = ();
+
+    fn render<'w>(
+        _item: &P,
+        _view: (),
+        _item_query: Option<()>,
+        interaction: SystemParamItem<'w, '_, Self::Param>,
+        pass: &mut TrackedRenderPass<'w>,
+    ) -> RenderCommandResult {
+        pass.set_bind_group(I, &interaction.into_inner().bind_group, &[]);
         RenderCommandResult::Success
     }
 }

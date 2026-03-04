@@ -80,6 +80,22 @@ fn build_wind_layout() -> BindGroupLayoutDescriptor {
     )
 }
 
+fn build_interaction_layout() -> BindGroupLayoutDescriptor {
+    BindGroupLayoutDescriptor::new(
+        "grass_interaction_layout",
+        &[BindGroupLayoutEntry {
+            binding: 0,
+            visibility: ShaderStages::VERTEX,
+            ty: BindingType::Buffer {
+                ty: BufferBindingType::Uniform,
+                has_dynamic_offset: false,
+                min_binding_size: None,
+            },
+            count: None,
+        }],
+    )
+}
+
 fn grass_instance_layout() -> VertexBufferLayout {
     VertexBufferLayout {
         array_stride: size_of::<GrassData>() as u64,
@@ -105,6 +121,7 @@ pub struct GrassPipeline {
     pub mesh_pipeline: MeshPipeline,
     pub grass_layout: BindGroupLayoutDescriptor,
     pub wind_layout: BindGroupLayoutDescriptor,
+    pub interaction_layout: BindGroupLayoutDescriptor,
 }
 
 impl FromWorld for GrassPipeline {
@@ -116,6 +133,7 @@ impl FromWorld for GrassPipeline {
             mesh_pipeline,
             grass_layout: build_grass_layout(),
             wind_layout: build_wind_layout(),
+            interaction_layout: build_interaction_layout(),
         }
     }
 }
@@ -144,6 +162,7 @@ impl SpecializedMeshPipeline for GrassPipeline {
         descriptor.primitive.cull_mode = None;
         descriptor.layout.push(self.grass_layout.clone());
         descriptor.layout.push(self.wind_layout.clone());
+        descriptor.layout.push(self.interaction_layout.clone());
 
         Ok(descriptor)
     }
@@ -156,6 +175,7 @@ pub struct GrassDeferredPipeline {
     pub prepass_pipeline: PrepassPipeline,
     pub grass_layout: BindGroupLayoutDescriptor,
     pub wind_layout: BindGroupLayoutDescriptor,
+    pub interaction_layout: BindGroupLayoutDescriptor,
 }
 
 impl FromWorld for GrassDeferredPipeline {
@@ -168,6 +188,7 @@ impl FromWorld for GrassDeferredPipeline {
             prepass_pipeline,
             grass_layout: build_grass_layout(),
             wind_layout: build_wind_layout(),
+            interaction_layout: build_interaction_layout(),
         }
     }
 }
@@ -205,6 +226,7 @@ impl SpecializedMeshPipeline for GrassDeferredPipeline {
         descriptor.primitive.cull_mode = None;
         descriptor.layout.push(self.grass_layout.clone());
         descriptor.layout.push(self.wind_layout.clone());
+        descriptor.layout.push(self.interaction_layout.clone());
 
         Ok(descriptor)
     }
@@ -230,5 +252,6 @@ pub(crate) fn ensure_grass_deferred_pipeline(
         prepass_pipeline: prepass_pipeline.as_ref().clone(),
         grass_layout: build_grass_layout(),
         wind_layout: build_wind_layout(),
+        interaction_layout: build_interaction_layout(),
     });
 }

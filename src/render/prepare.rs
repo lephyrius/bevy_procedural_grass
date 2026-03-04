@@ -24,6 +24,7 @@ use crate::grass::{
     chunk::{GrassLOD, RenderGrassChunks},
     grass::GrassLODMesh,
     grass::{Blade, Grass, GrassColor},
+    interaction::GrassInteractionUniform,
     wind::{GrassWind, Wind},
 };
 
@@ -534,6 +535,14 @@ pub struct WindBuffer {
 #[derive(Resource, Clone, Copy)]
 pub struct PreparedGlobalWindData(pub Wind);
 
+#[derive(Resource, Clone)]
+pub struct GrassInteractionBuffer {
+    pub buffer: Buffer,
+}
+
+#[derive(Resource, Clone, Copy)]
+pub struct PreparedGrassInteractionData(pub GrassInteractionUniform);
+
 #[derive(Component, Clone)]
 pub struct LocalWindBindGroupState {
     pub wind_map: Handle<Image>,
@@ -623,6 +632,66 @@ pub(crate) fn prepare_global_wind_bind_group(
     commands.insert_resource(BufferBindGroup::<GrassWind>::new(bind_group));
     *last_wind_map = Some(wind.wind_map.clone());
     *last_using_fallback = using_fallback;
+}
+
+pub(crate) fn prepare_grass_interaction_buffer(
+    mut commands: Commands,
+    render_device: Res<RenderDevice>,
+    render_queue: Res<RenderQueue>,
+    interaction: Option<Res<GrassInteractionUniform>>,
+    interaction_buffer: Option<Res<GrassInteractionBuffer>>,
+    prepared_interaction: Option<Res<PreparedGrassInteractionData>>,
+) {
+    let interaction_data = interaction.map_or_else(GrassInteractionUniform::default, |data| *data);
+
+    if prepared_interaction.is_some_and(|prepared| prepared.0 == interaction_data) {
+        return;
+    }
+
+    if let Some(interaction_buffer) = interaction_buffer {
+        render_queue.write_buffer(
+            &interaction_buffer.buffer,
+            0,
+            bytemuck::cast_slice(&[interaction_data]),
+        );
+        commands.insert_resource(PreparedGrassInteractionData(interaction_data));
+        return;
+    }
+
+    let buffer = render_device.create_buffer_with_data(&BufferInitDescriptor {
+        label: Some("grass interaction buffer"),
+        contents: bytemuck::cast_slice(&[interaction_data]),
+        usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
+    });
+
+    commands.insert_resource(GrassInteractionBuffer { buffer });
+    commands.insert_resource(PreparedGrassInteractionData(interaction_data));
+}
+
+pub(crate) fn prepare_grass_interaction_bind_group(
+    mut commands: Commands,
+    pipeline: Res<GrassPipeline>,
+    pipeline_cache: Res<PipelineCache>,
+    render_device: Res<RenderDevice>,
+    interaction_buffer: Res<GrassInteractionBuffer>,
+    existing_bind_group: Option<Res<BufferBindGroup<GrassInteractionUniform>>>,
+) {
+    if existing_bind_group.is_some() {
+        return;
+    }
+
+    let layout = pipeline_cache.get_bind_group_layout(&pipeline.interaction_layout);
+    let bind_group = render_device.create_bind_group(
+        Some("grass interaction bind group"),
+        &layout,
+        &BindGroupEntries::sequential((BufferBinding {
+            buffer: &interaction_buffer.buffer,
+            offset: 0,
+            size: None,
+        },)),
+    );
+
+    commands.insert_resource(BufferBindGroup::<GrassInteractionUniform>::new(bind_group));
 }
 
 pub(crate) fn prepare_local_wind_buffers(
