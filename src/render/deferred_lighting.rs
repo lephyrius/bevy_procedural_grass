@@ -78,6 +78,7 @@ pub struct GrassDeferredLightingPassId {
 }
 
 impl GrassDeferredLightingPassId {
+    /// Creates a camera pass-id marker used to select grass pixels in deferred lighting.
     pub fn new(value: u8) -> Self {
         Self {
             depth_id: value as u32,
@@ -91,6 +92,7 @@ impl Default for GrassDeferredLightingPassId {
     }
 }
 
+/// Creates the fallback pass-id uniform buffer used when extracted camera uniforms are unavailable.
 pub fn init_grass_deferred_lighting_fallback_buffer(
     mut commands: Commands,
     render_device: Res<RenderDevice>,
@@ -228,6 +230,7 @@ fn grass_deferred_lighting_layout() -> BindGroupLayoutDescriptor {
     )
 }
 
+/// Ensures deferred cameras have the grass deferred pass-id extraction component.
 pub fn insert_grass_deferred_lighting_pass_id_component(
     mut commands: Commands,
     settings: Option<Res<GrassDeferredLightingSettings>>,
@@ -244,6 +247,7 @@ pub fn insert_grass_deferred_lighting_pass_id_component(
     }
 }
 
+/// Adds the custom grass deferred lighting pass node and edges to the core 3D render graph.
 pub fn add_grass_deferred_lighting_pass_node(render_app: &mut SubApp) {
     render_app.add_render_graph_node::<ViewNodeRunner<GrassDeferredLightingPassNode>>(
         Core3d,

@@ -56,7 +56,7 @@ pub mod prelude {
     pub use crate::GrassDeferredLightingSettings;
     pub use crate::grass::{
         config::GrassConfig,
-        grass::{Grass, GrassBundle, GrassLODMesh},
+        grass::{Grass, GrassBundle, GrassLODMesh, GrassPlacementMaps},
         mesh::GrassMesh,
         wind::{GrassWind, Wind},
     };
@@ -100,6 +100,9 @@ impl Default for ProceduralGrassPlugin {
 
 impl ProceduralGrassPlugin {
     #[inline]
+    /// Overrides the deferred lighting pass id used by grass in deferred mode.
+    ///
+    /// Values are clamped to at least `1` because `0` is reserved by Bevy's deferred-id depth clear.
     pub fn with_deferred_lighting_pass_id(mut self, pass_id: u8) -> Self {
         self.deferred_lighting_pass_id = pass_id.max(1);
         self

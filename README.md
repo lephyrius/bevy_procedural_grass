@@ -72,6 +72,33 @@ Deferred variants of the examples are available:
 - `cargo run --example sphere_deferred`
 - `cargo run --example inspect_deferred --features bevy-inspector-egui`
 
+Placement-map example:
+- `cargo run --example grass_maps`
+
+## Placement Maps
+You can gate grass placement with optional density and height masks sampled from mesh UV0:
+
+```rust
+commands.spawn(GrassBundle {
+    grass: Grass {
+        entity: Some(terrain),
+        maps: GrassPlacementMaps {
+            density_map: Some(asset_server.load("masks/grass_density.png")),
+            height_map: Some(asset_server.load("masks/terrain_height.png")),
+            uv_scale: Vec2::ONE,
+            uv_offset: Vec2::ZERO,
+        },
+        ..default()
+    },
+    ..default()
+});
+```
+
+Notes:
+- Both maps are interpreted as `[0, 1]` masks and multiplied together.
+- Meshes must provide `UV_0` for map sampling.
+- Images need CPU-visible data (`RenderAssetUsages` including `MAIN_WORLD`) so placement can be generated on the CPU.
+
 Deferred mode notes:
 - Add `DepthPrepass`, `NormalPrepass`, and `DeferredPrepass` to your `Camera3d`.
 - The deferred grass path currently uses direct instanced draws for stability.

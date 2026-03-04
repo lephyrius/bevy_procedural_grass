@@ -29,10 +29,12 @@ pub struct GrassBundle {
     pub frustum_culling: NoFrustumCulling,
 }
 
+/// Generates chunked grass instances for entities that have not been populated yet.
 pub fn generate_grass(
     mut query: Query<(&Grass, &mut GrassChunks)>,
     mesh_entity_query: Query<(&Transform, &Mesh3d)>,
     meshes: Res<Assets<Mesh>>,
+    images: Res<Assets<Image>>,
 ) {
     for (grass, mut chunks) in query.iter_mut() {
         if !chunks.chunks.is_empty() {
@@ -48,7 +50,12 @@ pub fn generate_grass(
             continue;
         };
 
-        chunks.chunks = grass.generate_grass(transform, mesh, chunks.chunk_size);
+        let Some(generated_chunks) =
+            grass.generate_grass(transform, mesh, &images, chunks.chunk_size)
+        else {
+            continue;
+        };
+        chunks.chunks = generated_chunks;
     }
 }
 
@@ -60,6 +67,7 @@ pub struct Grass {
     pub density: u32,
     pub color: GrassColor,
     pub blade: Blade,
+    pub maps: GrassPlacementMaps,
 }
 
 impl Default for Grass {
@@ -69,7 +77,86 @@ impl Default for Grass {
             entity: None,
             color: GrassColor::default(),
             blade: Blade::default(),
+            maps: GrassPlacementMaps::default(),
         }
+    }
+}
+
+#[derive(Clone)]
+#[cfg_attr(feature = "bevy-inspector-egui", derive(Reflect, InspectorOptions))]
+#[cfg_attr(feature = "bevy-inspector-egui", reflect(InspectorOptions))]
+pub struct GrassPlacementMaps {
+    /// Per-texel density multiplier in [0, 1]. 0 removes grass, 1 keeps full density.
+    pub density_map: Option<Handle<Image>>,
+    /// Additional placement mask in [0, 1], useful for height/splat-style masks.
+    pub height_map: Option<Handle<Image>>,
+    /// UV transform applied before map sampling.
+    pub uv_scale: Vec2,
+    /// UV transform applied before map sampling.
+    pub uv_offset: Vec2,
+}
+
+impl GrassPlacementMaps {
+    #[inline]
+    fn uses_maps(&self) -> bool {
+        self.density_map.is_some() || self.height_map.is_some()
+    }
+}
+
+impl Default for GrassPlacementMaps {
+    fn default() -> Self {
+        Self {
+            density_map: None,
+            height_map: None,
+            uv_scale: Vec2::ONE,
+            uv_offset: Vec2::ZERO,
+        }
+    }
+}
+
+#[derive(Clone, Copy)]
+struct PlacementMapSampler<'a> {
+    image: &'a Image,
+    width: u32,
+    height: u32,
+    uv_scale: Vec2,
+    uv_offset: Vec2,
+}
+
+impl<'a> PlacementMapSampler<'a> {
+    #[inline]
+    fn new(image: &'a Image, uv_scale: Vec2, uv_offset: Vec2) -> Option<Self> {
+        let width = image.texture_descriptor.size.width;
+        let height = image.texture_descriptor.size.height;
+        if width == 0 || height == 0 {
+            return None;
+        }
+        if image.get_color_at(0, 0).is_err() {
+            return None;
+        }
+
+        Some(Self {
+            image,
+            width,
+            height,
+            uv_scale,
+            uv_offset,
+        })
+    }
+
+    #[inline]
+    fn sample_intensity(&self, uv: Vec2) -> f32 {
+        let uv = uv * self.uv_scale + self.uv_offset;
+        let uv = Vec2::new(uv.x.rem_euclid(1.0), uv.y.rem_euclid(1.0));
+        let max_x = self.width.saturating_sub(1);
+        let max_y = self.height.saturating_sub(1);
+        let x = (uv.x * max_x as f32).round() as u32;
+        let y = (uv.y * max_y as f32).round() as u32;
+        let Ok(color) = self.image.get_color_at(x.min(max_x), y.min(max_y)) else {
+            return 1.0;
+        };
+        let [r, g, b, _] = LinearRgba::from(color).to_f32_array();
+        (r * 0.2126 + g * 0.7152 + b * 0.0722).clamp(0.0, 1.0)
     }
 }
 
@@ -78,19 +165,47 @@ impl Grass {
         &self,
         transform: &Transform,
         mesh: &Mesh,
+        images: &Assets<Image>,
         chunk_size: f32,
-    ) -> HashMap<(i32, i32, i32), GrassChunkData> {
+    ) -> Option<HashMap<(i32, i32, i32), GrassChunkData>> {
         let mut chunks: HashMap<(i32, i32, i32), GrassChunkData> = HashMap::default();
         let Some(VertexAttributeValues::Float32x3(positions)) =
             mesh.attribute(Mesh::ATTRIBUTE_POSITION)
         else {
-            return chunks;
+            return Some(chunks);
         };
 
         let normals = match mesh.attribute(Mesh::ATTRIBUTE_NORMAL) {
             Some(VertexAttributeValues::Float32x3(normals)) => Some(normals),
             _ => None,
         };
+        let uvs = match mesh.attribute(Mesh::ATTRIBUTE_UV_0) {
+            Some(VertexAttributeValues::Float32x2(uvs)) => Some(uvs),
+            _ => None,
+        };
+
+        let density_map = match self.maps.density_map.as_ref() {
+            Some(handle) => match images.get(handle) {
+                Some(image) => Some(image),
+                None => return None,
+            },
+            None => None,
+        };
+        let height_map = match self.maps.height_map.as_ref() {
+            Some(handle) => match images.get(handle) {
+                Some(image) => Some(image),
+                None => return None,
+            },
+            None => None,
+        };
+
+        let density_sampler = density_map
+            .and_then(|map| PlacementMapSampler::new(map, self.maps.uv_scale, self.maps.uv_offset));
+        let height_sampler = height_map
+            .and_then(|map| PlacementMapSampler::new(map, self.maps.uv_scale, self.maps.uv_offset));
+        let map_sampling_enabled =
+            (density_sampler.is_some() || height_sampler.is_some()) && uvs.is_some();
+        let maps_requested_but_no_uv = self.maps.uses_maps() && uvs.is_none();
 
         let inv_chunk_size = 1.0 / chunk_size;
         let density = self.density as f32;
@@ -112,6 +227,40 @@ impl Grass {
                 }
             }
 
+            let triangle_uvs = if map_sampling_enabled {
+                let uvs = uvs.expect("map sampling is only enabled when UVs exist");
+                Some((
+                    Vec2::from(uvs[i0]),
+                    Vec2::from(uvs[i1]),
+                    Vec2::from(uvs[i2]),
+                ))
+            } else {
+                None
+            };
+            if let Some((uv0, uv1, uv2)) = triangle_uvs {
+                let uv_center = (uv0 + uv1 + uv2) * (1.0 / 3.0);
+                let sample_weight = |uv: Vec2| {
+                    let density_weight = density_sampler
+                        .map(|sampler| sampler.sample_intensity(uv))
+                        .unwrap_or(1.0);
+                    let height_weight = height_sampler
+                        .map(|sampler| sampler.sample_intensity(uv))
+                        .unwrap_or(1.0);
+                    (density_weight * height_weight).clamp(0.0, 1.0)
+                };
+                // Fast out for fully masked triangles while avoiding over-aggressive
+                // culling on low-tessellation meshes.
+                let triangle_hint = sample_weight(uv0)
+                    .max(sample_weight(uv1))
+                    .max(sample_weight(uv2))
+                    .max(sample_weight(uv_center));
+                if triangle_hint <= f32::EPSILON {
+                    return;
+                }
+            } else if maps_requested_but_no_uv {
+                return;
+            }
+
             let area = face_normal.length() * 0.5;
             let scaled_density = (density * area).ceil() as u32;
             if scaled_density == 0 {
@@ -122,6 +271,22 @@ impl Grass {
                 let r1 = rng.random_range(0.0..1.0_f32).sqrt();
                 let r2 = rng.random_range(0.0..1.0_f32);
                 let barycentric = Vec3::new(1.0 - r1, r1 * (1.0 - r2), r1 * r2);
+                if let Some((uv0, uv1, uv2)) = triangle_uvs {
+                    let uv = uv0 * barycentric.x + uv1 * barycentric.y + uv2 * barycentric.z;
+                    let density_weight = density_sampler
+                        .map(|sampler| sampler.sample_intensity(uv))
+                        .unwrap_or(1.0);
+                    let height_weight = height_sampler
+                        .map(|sampler| sampler.sample_intensity(uv))
+                        .unwrap_or(1.0);
+                    let placement_weight = (density_weight * height_weight).clamp(0.0, 1.0);
+                    if placement_weight <= 0.0 || rng.random_range(0.0..1.0_f32) > placement_weight
+                    {
+                        continue;
+                    }
+                } else if maps_requested_but_no_uv {
+                    continue;
+                }
 
                 let position = (v0 * barycentric.x + v1 * barycentric.y + v2 * barycentric.z)
                     + transform.translation;
@@ -158,7 +323,7 @@ impl Grass {
             }
         }
 
-        chunks
+        Some(chunks)
     }
 }
 
@@ -184,6 +349,7 @@ pub struct GrassColor {
 
 impl GrassColor {
     #[inline]
+    /// Converts colors to linear RGBA arrays for GPU uniform uploads.
     pub fn to_array(&self) -> [[f32; 4]; 3] {
         [
             LinearRgba::from(self.ao).to_f32_array(),
@@ -246,6 +412,7 @@ pub struct GrassLODMesh {
 
 impl GrassLODMesh {
     #[inline]
+    /// Creates a low-LOD mesh wrapper for grass rendering.
     pub fn new(mesh_handle: Handle<Mesh>) -> Self {
         Self {
             mesh_handle: Some(mesh_handle),

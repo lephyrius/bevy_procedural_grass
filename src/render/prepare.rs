@@ -42,6 +42,7 @@ pub struct BufferBindGroup<T> {
 
 impl<T> BufferBindGroup<T> {
     #[inline]
+    /// Wraps a bind group with a typed marker for system/resource dispatch.
     pub fn new(bind_group: BindGroup) -> Self {
         Self {
             bind_group,

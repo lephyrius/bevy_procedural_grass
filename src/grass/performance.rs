@@ -15,16 +15,19 @@ pub enum GrassPerformancePreset {
 
 impl GrassPerformancePreset {
     #[inline]
+    /// Returns the highest-quality preset.
     pub fn quality() -> Self {
         Self::Quality
     }
 
     #[inline]
+    /// Returns the balanced preset.
     pub fn balanced() -> Self {
         Self::Balanced
     }
 
     #[inline]
+    /// Returns the fastest preset.
     pub fn performance() -> Self {
         Self::Performance
     }
@@ -81,6 +84,7 @@ impl GrassPerformancePreset {
 #[derive(Component)]
 pub struct PerformancePresetApplied;
 
+/// Applies the selected performance preset to global grass resources.
 pub fn apply_preset_to_resources(
     preset: Option<Res<GrassPerformancePreset>>,
     mut config: ResMut<GrassConfig>,
@@ -93,6 +97,7 @@ pub fn apply_preset_to_resources(
     preset.apply_to_wind(&mut wind);
 }
 
+/// Applies the selected performance preset to newly spawned grass entities.
 pub fn apply_preset_to_grass(
     mut commands: Commands,
     preset: Option<Res<GrassPerformancePreset>>,

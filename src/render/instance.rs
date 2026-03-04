@@ -19,6 +19,7 @@ pub struct GrassData {
 
 impl GrassData {
     #[inline]
+    /// Packs one grass instance position and normal into the render format.
     pub fn new(position: Vec3, normal: Vec3) -> Self {
         let normal = normal.normalize_or_zero();
         Self {

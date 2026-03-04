@@ -72,6 +72,7 @@ impl ExtractResource for GrassWind {
     }
 }
 
+/// Creates the GPU wind map texture used by grass shaders.
 pub fn create_wind_map(mut wind: ResMut<GrassWind>, mut images: ResMut<Assets<Image>>) {
     let mut image = Image::new_fill(
         Extent3d {
@@ -89,6 +90,7 @@ pub fn create_wind_map(mut wind: ResMut<GrassWind>, mut images: ResMut<Assets<Im
     wind.wind_map = images.add(image);
 }
 
+/// Updates wind time every frame.
 pub fn update_wind_time(mut wind: ResMut<GrassWind>, time: Res<Time>) {
     wind.wind_data._padding[0] = time.elapsed_secs();
 }
@@ -99,6 +101,7 @@ pub struct WindUpdateState {
     snapped_time: f32,
 }
 
+/// Updates wind time at a fixed rate set by [`GrassWind::compute_update_hz`].
 pub fn update_wind_time_decimated(
     mut wind: ResMut<GrassWind>,
     time: Res<Time>,

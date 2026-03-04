@@ -42,6 +42,7 @@ pub struct GrassWindComputeDispatch(pub bool);
 #[derive(Debug, Hash, PartialEq, Eq, Clone, RenderLabel)]
 pub struct GrassWindComputeLabel;
 
+/// Initializes the wind compute pipeline and dispatch state resources.
 pub fn init_wind_compute_pipeline(mut commands: Commands, pipeline_cache: Res<PipelineCache>) {
     let bind_group_layout = bevy::render::render_resource::BindGroupLayoutDescriptor::new(
         "grass_wind_compute_layout",
@@ -69,6 +70,7 @@ pub fn init_wind_compute_pipeline(mut commands: Commands, pipeline_cache: Res<Pi
     commands.insert_resource(GrassWindComputeDispatch(false));
 }
 
+/// Builds or refreshes the wind compute bind group and marks whether a dispatch is needed.
 pub fn prepare_wind_compute_bind_group(
     mut commands: Commands,
     pipeline: Res<GrassWindComputePipeline>,
@@ -202,6 +204,7 @@ pub struct GrassIndirectComputeDispatches(pub Vec<GrassIndirectComputeDispatchIt
 #[derive(Debug, Hash, PartialEq, Eq, Clone, RenderLabel)]
 pub struct GrassIndirectComputeLabel;
 
+/// Initializes the indirect draw command generation compute pipeline.
 pub fn init_indirect_compute_pipeline(mut commands: Commands, pipeline_cache: Res<PipelineCache>) {
     let bind_group_layout = bevy::render::render_resource::BindGroupLayoutDescriptor::new(
         "grass_indirect_compute_layout",
@@ -230,6 +233,7 @@ pub fn init_indirect_compute_pipeline(mut commands: Commands, pipeline_cache: Re
     commands.insert_resource(GrassIndirectComputeDispatches::default());
 }
 
+/// Rebuilds per-entity indirect compute bind groups and queued dispatch items.
 pub fn prepare_indirect_compute_bind_group(
     mut commands: Commands,
     mut dispatches: ResMut<GrassIndirectComputeDispatches>,

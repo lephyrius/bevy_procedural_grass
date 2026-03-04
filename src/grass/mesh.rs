@@ -6,6 +6,9 @@ use bevy::{
 pub struct GrassMesh;
 
 impl GrassMesh {
+    /// Builds a vertical grass blade mesh with the requested segment count.
+    ///
+    /// Higher values produce smoother curvature at increased vertex cost.
     pub fn mesh(segments: u32) -> Mesh {
         let mut positions = Vec::new();
         let mut uvs = Vec::new();
