@@ -20,6 +20,7 @@ fn setup(
 ) {
     let density_map = images.add(build_density_map(256));
     let height_map = images.add(build_height_map(256));
+    let elevation_map = images.add(build_elevation_map(256));
 
     let terrain = commands
         .spawn((
@@ -42,6 +43,8 @@ fn setup(
                 density_map: Some(density_map),
                 height_map: Some(height_map),
                 height_scale: 1.0,
+                elevation_map: Some(elevation_map),
+                elevation_scale: 0.8,
                 uv_scale: Vec2::splat(2.0),
                 uv_offset: Vec2::new(0.1, 0.0),
             },
@@ -92,6 +95,14 @@ fn build_height_map(size: u32) -> Image {
         let crest = 0.2 + wave * 0.6;
         let signed = (uv.y - crest) * 4.0;
         (0.5 + signed * 0.5).clamp(0.0, 1.0)
+    })
+}
+
+fn build_elevation_map(size: u32) -> Image {
+    build_mask_map(size, |uv| {
+        let wave_x = 0.5 + 0.5 * (uv.x * std::f32::consts::TAU * 1.5).sin();
+        let wave_y = 0.5 + 0.5 * (uv.y * std::f32::consts::TAU * 1.1).cos();
+        (wave_x * wave_y).clamp(0.0, 1.0)
     })
 }
 

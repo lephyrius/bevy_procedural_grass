@@ -108,6 +108,10 @@ pub struct GrassPlacementMaps {
     pub height_map: Option<Handle<Image>>,
     /// Global multiplier applied to sampled `height_map` values before clamping.
     pub height_scale: f32,
+    /// Per-instance spawn-elevation multiplier in [0, 1], sampled from UV0.
+    pub elevation_map: Option<Handle<Image>>,
+    /// Global world-space offset applied along surface normal using sampled `elevation_map`.
+    pub elevation_scale: f32,
     /// UV transform applied before map sampling.
     pub uv_scale: Vec2,
     /// UV transform applied before map sampling.
@@ -117,7 +121,7 @@ pub struct GrassPlacementMaps {
 impl GrassPlacementMaps {
     #[inline]
     fn uses_maps(&self) -> bool {
-        self.density_map.is_some() || self.height_map.is_some()
+        self.density_map.is_some() || self.height_map.is_some() || self.elevation_map.is_some()
     }
 }
 
@@ -127,6 +131,8 @@ impl Default for GrassPlacementMaps {
             density_map: None,
             height_map: None,
             height_scale: 1.0,
+            elevation_map: None,
+            elevation_scale: 1.0,
             uv_scale: Vec2::ONE,
             uv_offset: Vec2::ZERO,
         }
@@ -217,13 +223,23 @@ impl Grass {
             },
             None => None,
         };
+        let elevation_map = match self.maps.elevation_map.as_ref() {
+            Some(handle) => match images.get(handle) {
+                Some(image) => Some(image),
+                None => return None,
+            },
+            None => None,
+        };
 
         let density_sampler = density_map
             .and_then(|map| PlacementMapSampler::new(map, self.maps.uv_scale, self.maps.uv_offset));
         let height_sampler = height_map
             .and_then(|map| PlacementMapSampler::new(map, self.maps.uv_scale, self.maps.uv_offset));
+        let elevation_sampler = elevation_map
+            .and_then(|map| PlacementMapSampler::new(map, self.maps.uv_scale, self.maps.uv_offset));
         let map_sampling_enabled =
-            (density_sampler.is_some() || height_sampler.is_some()) && uvs.is_some();
+            (density_sampler.is_some() || height_sampler.is_some() || elevation_sampler.is_some())
+                && uvs.is_some();
         let maps_requested_but_no_uv = self.maps.uses_maps() && uvs.is_none();
 
         let inv_chunk_size = 1.0 / chunk_size;
@@ -287,6 +303,7 @@ impl Grass {
                 let r2 = rng.random_range(0.0..1.0_f32);
                 let barycentric = Vec3::new(1.0 - r1, r1 * (1.0 - r2), r1 * r2);
                 let mut height_factor = 1.0;
+                let mut elevation_offset = 0.0;
                 if let Some((uv0, uv1, uv2)) = triangle_uvs {
                     let uv = uv0 * barycentric.x + uv1 * barycentric.y + uv2 * barycentric.z;
                     let density_weight = density_sampler
@@ -302,12 +319,16 @@ impl Grass {
                     if height_factor <= f32::EPSILON {
                         continue;
                     }
+                    elevation_offset = elevation_sampler
+                        .map(|sampler| sampler.sample_intensity(uv) * self.maps.elevation_scale)
+                        .unwrap_or(0.0);
                 } else if maps_requested_but_no_uv {
                     continue;
                 }
 
                 let position = (v0 * barycentric.x + v1 * barycentric.y + v2 * barycentric.z)
-                    + transform.translation;
+                    + transform.translation
+                    + normal * elevation_offset;
 
                 let chunk_coords = (
                     (position.x * inv_chunk_size).floor() as i32,

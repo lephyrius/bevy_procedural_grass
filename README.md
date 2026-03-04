@@ -107,7 +107,7 @@ Interaction example (moving interactor):
 - `cargo run --example grass_interaction`
 
 ## Placement Maps
-You can gate grass placement with optional density and height masks sampled from mesh UV0:
+You can gate grass placement with optional density, blade-height, and spawn-elevation masks sampled from mesh UV0:
 
 ```rust
 commands.spawn(GrassBundle {
@@ -117,6 +117,8 @@ commands.spawn(GrassBundle {
             density_map: Some(asset_server.load("masks/grass_density.png")),
             height_map: Some(asset_server.load("masks/terrain_height.png")),
             height_scale: 1.0,
+            elevation_map: Some(asset_server.load("masks/grass_elevation.png")),
+            elevation_scale: 0.8,
             uv_scale: Vec2::ONE,
             uv_offset: Vec2::ZERO,
         },
@@ -130,6 +132,8 @@ Notes:
 - `density_map` is a `[0, 1]` placement mask (probability/density multiplier).
 - `height_map` is a `[0, 1]` blade-height multiplier.
 - `height_scale` multiplies sampled `height_map` values before clamping to `[0, 1]`.
+- `elevation_map` is a `[0, 1]` spawn-offset mask.
+- `elevation_scale` scales sampled `elevation_map` values in world units and offsets each spawned blade along the surface normal.
 - Meshes must provide `UV_0` for map sampling.
 - Images need CPU-visible data (`RenderAssetUsages` including `MAIN_WORLD`) so placement can be generated on the CPU.
 
